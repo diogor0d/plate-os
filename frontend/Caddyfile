@@ -1,0 +1,16 @@
+:8080 {
+	encode zstd gzip
+
+	# API + SSE: flush immediately so Server-Sent Events stream through
+	handle /api/* {
+		reverse_proxy api:8000 {
+			flush_interval -1
+		}
+	}
+
+	# SPA static hosting with history fallback
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}

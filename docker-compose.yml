@@ -1,0 +1,44 @@
+# PlateOS — fully containerized deployment (decision D17).
+# Nothing runs bare-metal on the host: db + api + web (Caddy) only.
+# TLS is expected to terminate at an external reverse proxy (homelab Traefik),
+# which forwards to web:8080. Set PLATEOS_COOKIE_SECURE=true behind TLS.
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-plateos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plateos}
+      POSTGRES_DB: ${POSTGRES_DB:-plateos}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-plateos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Inside the compose network the DB host is the service name.
+      PLATEOS_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-plateos}:${POSTGRES_PASSWORD:-plateos}@db:5432/${POSTGRES_DB:-plateos}
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #09090b;
+  color: #fafafa;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* iOS safe areas (brief constraint: env(safe-area-inset-*) everywhere) */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Kill the legacy 300ms tap delay on interactive controls */
+button,
+.stepper {
+  touch-action: manipulation;
+  user-select: none;
+}
