@@ -30,7 +30,7 @@ async def daily_history(
     tz_name = profile.timezone
     today = datetime.now(ZoneInfo(tz_name)).date()
     first_day = today - timedelta(days=days - 1)
-    start, _ = day_bounds(first_day.isoformat(), tz_name)
+    start, _ = day_bounds(first_day, tz_name)
 
     local_day = func.to_char(func.timezone(tz_name, MealLog.logged_at), "YYYY-MM-DD")
     stmt = select(

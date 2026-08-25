@@ -3,8 +3,8 @@
 import httpx
 from pydantic import BaseModel
 
-from app.config import get_settings
 from app.schemas.llm_contracts import Per100Values
+from app.services.runtime_settings import resolve_openfoodfacts_base_url
 
 USER_AGENT = "PlateOS/0.1 (self-hosted nutrition tracker)"
 
@@ -21,9 +21,9 @@ def _num(nutriments: dict, key: str) -> float:
 
 
 async def fetch_product_by_barcode(barcode: str) -> OFFResult | None:
-    s = get_settings()
+    base_url = resolve_openfoodfacts_base_url()
     async with httpx.AsyncClient(timeout=10, headers={"User-Agent": USER_AGENT}) as client:
-        resp = await client.get(f"{s.openfoodfacts_base_url}/product/{barcode}.json")
+        resp = await client.get(f"{base_url}/product/{barcode}.json")
         if resp.status_code != 200:
             return None
         data = resp.json()

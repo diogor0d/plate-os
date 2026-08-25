@@ -13,6 +13,9 @@ dev-dist/
 .env
 .env.*
 !.env.example
+backups/
+secrets/
+backend/data/
 
 # OS / editor
 .DS_Store

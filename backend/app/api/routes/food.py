@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,15 +15,15 @@ router = APIRouter(prefix="/api/food-items", tags=["food"])
 
 @router.get("", response_model=list[FoodItemOut])
 async def list_food_items(
-    q: str = "",
-    limit: int = 20,
+    q: Annotated[str, Query(max_length=255)] = "",
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
     _profile: UserProfile = Depends(get_current_profile),
     session: AsyncSession = Depends(get_session),
 ):
     stmt = select(FoodItem)
     if q:
         stmt = stmt.where(FoodItem.name.ilike(f"%{q}%"))
-    stmt = stmt.order_by(FoodItem.name).limit(min(limit, 50))
+    stmt = stmt.order_by(FoodItem.name).limit(limit)
     return (await session.execute(stmt)).scalars().all()
 
 
@@ -51,7 +53,7 @@ async def create_food_item(
 
 @router.get("/barcode/{code}", response_model=FoodItemOut)
 async def get_food_item_by_barcode(
-    code: str,
+    code: Annotated[str, Path(min_length=1, max_length=64)],
     _profile: UserProfile = Depends(get_current_profile),
     session: AsyncSession = Depends(get_session),
 ):
@@ -68,8 +70,8 @@ async def get_food_item_by_barcode(
 
     item = FoodItem(
         barcode=code,
-        name=off.name,
-        brand=off.brand,
+        name=off.name[:255],
+        brand=off.brand[:255] if off.brand else None,
         calories_per_100=off.per100.calories,
         protein_per_100=off.per100.protein_g,
         carbs_per_100=off.per100.carbs_g,

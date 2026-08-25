@@ -5,33 +5,39 @@ their profile timezone (IANA name), never by UTC date_trunc. Bounds are
 computed with zoneinfo and compared against timestamptz instants.
 """
 
+import hashlib
+import json
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_profile
 from app.db import get_session
-from app.models import FoodItem, MealLog, UserProfile
+from app.models import FoodItem, MealLog, MealLogMutation, UserProfile
 from app.schemas.api import DailySummary, MealLogCreate, MealLogOut, MealLogPatch
-from app.schemas.llm_contracts import Per100Values
-from app.services.nutrition import MACRO_FIELDS, scale_to_quantity
+from app.services.nutrition import (
+    MACRO_FIELDS,
+    canonical_density_values,
+    canonical_quantity,
+    scale_density_values,
+)
 
 router = APIRouter(prefix="/api", tags=["meals"])
 
 
-def day_bounds(day: str, tz_name: str) -> tuple[datetime, datetime]:
+def day_bounds(day: date, tz_name: str) -> tuple[datetime, datetime]:
     tz = ZoneInfo(tz_name)
-    d = date.fromisoformat(day)
-    start = datetime.combine(d, time.min, tzinfo=tz)
+    start = datetime.combine(day, time.min, tzinfo=tz)
     return start, start + timedelta(days=1)
 
 
-def _today(tz_name: str) -> str:
-    return datetime.now(ZoneInfo(tz_name)).date().isoformat()
+def _today(tz_name: str) -> date:
+    return datetime.now(ZoneInfo(tz_name)).date()
 
 
 async def _consumed_between(
@@ -49,7 +55,7 @@ async def _consumed_between(
 
 
 async def consumed_for_day(
-    session: AsyncSession, profile: UserProfile, day: str
+    session: AsyncSession, profile: UserProfile, day: date
 ) -> dict[str, float]:
     start, end = day_bounds(day, profile.timezone)
     return await _consumed_between(session, profile.id, start, end)
@@ -57,7 +63,7 @@ async def consumed_for_day(
 
 @router.get("/meal-logs", response_model=list[MealLogOut])
 async def list_meal_logs(
-    day: str | None = None,
+    day: date | None = None,
     profile: UserProfile = Depends(get_current_profile),
     session: AsyncSession = Depends(get_session),
 ):
@@ -71,6 +77,43 @@ async def list_meal_logs(
     return (await session.execute(stmt)).scalars().all()
 
 
+def _request_fingerprint(body: MealLogCreate) -> str:
+    payload = body.model_dump(mode="json", exclude={"client_mutation_id"})
+    if body.logged_at is not None:
+        payload["logged_at"] = body.logged_at.astimezone(timezone.utc).isoformat()
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+async def _replay_mutation(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    client_mutation_id: uuid.UUID,
+    request_fingerprint: str,
+) -> MealLog | None:
+    mutation = await session.get(
+        MealLogMutation,
+        {"user_id": user_id, "client_mutation_id": client_mutation_id},
+    )
+    if mutation is None:
+        return None
+    if mutation.request_fingerprint != request_fingerprint:
+        raise HTTPException(
+            status_code=409,
+            detail="client_mutation_id was already used with a different payload",
+        )
+    if mutation.meal_log_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="client_mutation_id belongs to a meal log that was deleted",
+        )
+    log = await session.get(MealLog, mutation.meal_log_id)
+    if log is None:
+        raise HTTPException(status_code=409, detail="Idempotency record is inconsistent")
+    return log
+
+
 @router.post("/meal-logs", response_model=MealLogOut, status_code=201)
 async def create_meal_log(
     body: MealLogCreate,
@@ -80,32 +123,50 @@ async def create_meal_log(
     """Persist a (confirmed) meal entry. Totals are computed HERE from the
     per-100g density; client-sent totals are never accepted."""
 
+    fingerprint: str | None = None
+    if body.client_mutation_id is not None:
+        fingerprint = _request_fingerprint(body)
+        replay = await _replay_mutation(
+            session,
+            user_id=profile.id,
+            client_mutation_id=body.client_mutation_id,
+            request_fingerprint=fingerprint,
+        )
+        if replay is not None:
+            return replay
+
     if body.food_item_id is not None:
         item = await session.get(FoodItem, body.food_item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="food_item not found")
-        per100 = Per100Values(
-            calories=float(item.calories_per_100),
-            protein_g=float(item.protein_per_100),
-            carbs_g=float(item.carbs_per_100),
-            fat_g=float(item.fat_per_100),
-            fiber_g=float(item.fiber_per_100),
-        )
+        density = {
+            "calories": item.calories_per_100,
+            "protein_g": item.protein_per_100,
+            "carbs_g": item.carbs_per_100,
+            "fat_g": item.fat_per_100,
+            "fiber_g": item.fiber_per_100,
+        }
     elif body.per100 is not None:
-        per100 = body.per100
+        density = canonical_density_values(body.per100)
     else:
         raise HTTPException(
             status_code=422,
             detail="Provide food_item_id or per100 values for a custom item",
         )
 
-    totals = scale_to_quantity(per100, body.quantity_g)
+    quantity = canonical_quantity(body.quantity_g)
+    totals = scale_density_values(density, quantity)
     log = MealLog(
         user_id=profile.id,
         food_item_id=body.food_item_id,
         custom_name=body.custom_name,
         logged_at=body.logged_at or datetime.now(timezone.utc),
-        quantity_g=body.quantity_g,
+        quantity_g=quantity,
+        calories_per_100=density["calories"],
+        protein_per_100=density["protein_g"],
+        carbs_per_100=density["carbs_g"],
+        fat_per_100=density["fat_g"],
+        fiber_per_100=density["fiber_g"],
         calculated_calories=totals["calories"],
         calculated_protein=totals["protein_g"],
         calculated_carbs=totals["carbs_g"],
@@ -113,8 +174,31 @@ async def create_meal_log(
         calculated_fiber=totals["fiber_g"],
         source_type=body.source_type,
     )
-    session.add(log)
-    await session.commit()
+    try:
+        session.add(log)
+        await session.flush()
+        if body.client_mutation_id is not None and fingerprint is not None:
+            session.add(
+                MealLogMutation(
+                    user_id=profile.id,
+                    client_mutation_id=body.client_mutation_id,
+                    request_fingerprint=fingerprint,
+                    meal_log_id=log.id,
+                )
+            )
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        if body.client_mutation_id is not None and fingerprint is not None:
+            replay = await _replay_mutation(
+                session,
+                user_id=profile.id,
+                client_mutation_id=body.client_mutation_id,
+                request_fingerprint=fingerprint,
+            )
+            if replay is not None:
+                return replay
+        raise
     await session.refresh(log)
     return log
 
@@ -133,14 +217,23 @@ async def update_meal_log(
     if body.logged_at is not None:
         log.logged_at = body.logged_at
     if body.quantity_g is not None:
-        # Rescale proportionally from the stored totals (density-consistent).
-        factor = body.quantity_g / float(log.quantity_g) if float(log.quantity_g) else 0.0
-        log.calculated_calories = round(float(log.calculated_calories) * factor, 1)
-        log.calculated_protein = round(float(log.calculated_protein) * factor, 1)
-        log.calculated_carbs = round(float(log.calculated_carbs) * factor, 1)
-        log.calculated_fat = round(float(log.calculated_fat) * factor, 1)
-        log.calculated_fiber = round(float(log.calculated_fiber) * factor, 1)
-        log.quantity_g = body.quantity_g
+        quantity = canonical_quantity(body.quantity_g)
+        totals = scale_density_values(
+            {
+                "calories": log.calories_per_100,
+                "protein_g": log.protein_per_100,
+                "carbs_g": log.carbs_per_100,
+                "fat_g": log.fat_per_100,
+                "fiber_g": log.fiber_per_100,
+            },
+            quantity,
+        )
+        log.calculated_calories = totals["calories"]
+        log.calculated_protein = totals["protein_g"]
+        log.calculated_carbs = totals["carbs_g"]
+        log.calculated_fat = totals["fat_g"]
+        log.calculated_fiber = totals["fiber_g"]
+        log.quantity_g = quantity
 
     session.add(log)
     await session.commit()
@@ -164,7 +257,7 @@ async def delete_meal_log(
 
 @router.get("/daily-summary", response_model=DailySummary)
 async def daily_summary(
-    day: str | None = None,
+    day: date | None = None,
     profile: UserProfile = Depends(get_current_profile),
     session: AsyncSession = Depends(get_session),
 ):
@@ -178,7 +271,7 @@ async def daily_summary(
     }
     remaining = {k: round(targets[k] - consumed[k], 1) for k in targets}
     return DailySummary(
-        date=day,
+        date=day.isoformat(),
         timezone=profile.timezone,
         targets=targets,
         consumed=consumed,

@@ -54,7 +54,7 @@ async def build_context(session: AsyncSession, profile: UserProfile) -> str:
     """Contextual injector: now, today's budget state, last 3 days of trends."""
     tz_name = profile.timezone
     now = datetime.now(ZoneInfo(tz_name))
-    today = now.date().isoformat()
+    today = now.date()
 
     consumed = await consumed_for_day(session, profile, today)
     targets = {
@@ -75,9 +75,9 @@ async def build_context(session: AsyncSession, profile: UserProfile) -> str:
         "Last 3 days total calories:",
     ]
     for i in range(1, 4):
-        day = (now.date() - timedelta(days=i)).isoformat()
+        day = now.date() - timedelta(days=i)
         day_consumed = await consumed_for_day(session, profile, day)
-        lines.append(f"- {day}: {day_consumed['calories']:.0f} kcal, "
+        lines.append(f"- {day.isoformat()}: {day_consumed['calories']:.0f} kcal, "
                      f"{day_consumed['protein_g']:.0f}g protein")
     return "\n".join(lines)
 
@@ -90,7 +90,7 @@ async def chat_stream(
 ):
     async def event_stream():
         try:
-            llm = get_llm()
+            llm = get_llm("text")
             context = await build_context(session, profile)
             proposal = await llm.extract_json(
                 system=CHAT_SYSTEM + "\n\n# User context\n" + context,

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Numeric, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -58,7 +58,15 @@ class MealLog(Base):
     runtime (never by the LLM and never trusted from the client)."""
 
     __tablename__ = "meal_logs"
-    __table_args__ = (Index("ix_meal_logs_user_logged_at", "user_id", "logged_at"),)
+    __table_args__ = (
+        Index("ix_meal_logs_user_logged_at", "user_id", "logged_at"),
+        CheckConstraint("quantity_g > 0", name="ck_meal_logs_quantity_positive"),
+        CheckConstraint(
+            "calories_per_100 >= 0 AND protein_per_100 >= 0 "
+            "AND carbs_per_100 >= 0 AND fat_per_100 >= 0 AND fiber_per_100 >= 0",
+            name="ck_meal_logs_density_nonnegative",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -71,13 +79,44 @@ class MealLog(Base):
     logged_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    quantity_g: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
-    calculated_calories: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
-    calculated_protein: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
-    calculated_carbs: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
-    calculated_fat: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
-    calculated_fiber: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False, default=0)
+    quantity_g: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    # Immutable density snapshot: PATCH always recomputes from these values,
+    # never from already-rounded calculated totals.
+    calories_per_100: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    protein_per_100: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    carbs_per_100: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    fat_per_100: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    fiber_per_100: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    calculated_calories: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    calculated_protein: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    calculated_carbs: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    calculated_fat: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    calculated_fiber: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class MealLogMutation(Base):
+    """Idempotency ledger retained after a meal is deleted.
+
+    A nullable meal_log_id is a tombstone: replaying the consumed mutation key
+    cannot recreate a deliberately deleted entry.
+    """
+
+    __tablename__ = "meal_log_mutations"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user_profile.id", ondelete="cascade"), primary_key=True
+    )
+    client_mutation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True
+    )
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    meal_log_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("meal_logs.id", ondelete="set null"), unique=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class ChatMessage(Base):

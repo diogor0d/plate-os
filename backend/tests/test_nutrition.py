@@ -36,6 +36,14 @@ class TestNormalizeExtraction:
         with pytest.raises(ValueError):
             normalize_extraction(make_extraction(basis="per_serving", serving_size_g=None))
 
+    def test_impossible_normalized_density_is_rejected_before_arithmetic(self):
+        with pytest.raises(ValueError):
+            make_extraction(
+                basis="per_serving",
+                serving_size_g=1,
+                calories=120,
+            )
+
 
 class TestScaleToQuantity:
     def test_doubles_at_200g(self):
@@ -56,6 +64,26 @@ class TestScaleToQuantity:
         )
         assert all(abs(v - round(v, 1)) < 1e-9 for v in totals.values())
         assert totals["calories"] == 41.8
+
+    @pytest.mark.parametrize(
+        ("calories", "quantity", "expected"),
+        [
+            (209.0, 5.0, 10.5),
+            (45.0, 5.0, 2.3),
+            (1.0, 5.0, 0.1),
+        ],
+    )
+    def test_positive_half_ties_round_up(self, calories, quantity, expected):
+        totals = scale_to_quantity(
+            Per100Values(
+                calories=calories,
+                protein_g=0,
+                carbs_g=0,
+                fat_g=0,
+            ),
+            quantity,
+        )
+        assert totals["calories"] == expected
 
 
 class TestTotals:

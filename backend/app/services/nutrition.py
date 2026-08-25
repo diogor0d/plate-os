@@ -6,13 +6,46 @@ proposal-card quantity edits recompute instantly client-side (decision D13:
 the LLM extracts, the app computes).
 """
 
+from collections.abc import Mapping
+from decimal import Decimal, ROUND_HALF_UP
+
 from app.schemas.llm_contracts import FoodItemProposal, NutritionLabelExtraction, Per100Values
 
 MACRO_FIELDS = ("calories", "protein_g", "carbs_g", "fat_g", "fiber_g")
+ONE_DECIMAL = Decimal("0.1")
+DENSITY_DECIMALS = Decimal("0.0001")
+QUANTITY_DECIMALS = Decimal("0.01")
 
 
-def round1(value: float) -> float:
-    return round(value, 1)
+def _decimal(value: float | Decimal) -> Decimal:
+    return value if isinstance(value, Decimal) else Decimal(str(value))
+
+
+def round1(value: float | Decimal) -> float:
+    return float(_decimal(value).quantize(ONE_DECIMAL, rounding=ROUND_HALF_UP))
+
+
+def canonical_quantity(value: float | Decimal) -> Decimal:
+    return _decimal(value).quantize(QUANTITY_DECIMALS, rounding=ROUND_HALF_UP)
+
+
+def canonical_density_values(per100: Per100Values) -> dict[str, Decimal]:
+    return {
+        field: _decimal(getattr(per100, field)).quantize(
+            DENSITY_DECIMALS, rounding=ROUND_HALF_UP
+        )
+        for field in MACRO_FIELDS
+    }
+
+
+def scale_density_values(
+    densities: Mapping[str, float | Decimal], quantity_g: float | Decimal
+) -> dict[str, float]:
+    quantity = canonical_quantity(quantity_g)
+    return {
+        field: round1(_decimal(densities[field]) * quantity / Decimal(100))
+        for field in MACRO_FIELDS
+    }
 
 
 def normalize_extraction(e: NutritionLabelExtraction) -> Per100Values:
@@ -27,14 +60,16 @@ def normalize_extraction(e: NutritionLabelExtraction) -> Per100Values:
     return Per100Values(**{k: round1(v) for k, v in vals.items()})
 
 
-def scale_to_quantity(per100: Per100Values, quantity_g: float) -> dict[str, float]:
-    return {f: round1(getattr(per100, f) * quantity_g / 100.0) for f in MACRO_FIELDS}
+def scale_to_quantity(
+    per100: Per100Values, quantity_g: float | Decimal
+) -> dict[str, float]:
+    return scale_density_values(canonical_density_values(per100), quantity_g)
 
 
 def sum_totals(items: list[dict[str, float]]) -> dict[str, float]:
-    return {f: round1(sum(i[f] for i in items)) for f in MACRO_FIELDS}
+    return {f: round1(sum((_decimal(i[f]) for i in items), Decimal(0))) for f in MACRO_FIELDS}
 
 
 def proposal_totals(items: list[FoodItemProposal]) -> dict[str, float]:
     """Totals across a proposal card, for display in the confirm button."""
-    return sum_totals([{f: getattr(i, f) for f in MACRO_FIELDS} for i in items])
+    return sum_totals([scale_to_quantity(i.per100, i.estimated_weight_g) for i in items])

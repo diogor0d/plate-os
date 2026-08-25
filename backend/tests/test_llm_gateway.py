@@ -33,11 +33,10 @@ class FakeCompletions:
 
 
 def make_service(responses: list[str]) -> LLMService:
-    svc = LLMService()
-    svc._client = type("Client", (), {})()  # type: ignore[assignment]
-    svc._client.chat = type("Chat", (), {})()
-    svc._client.chat.completions = FakeCompletions(responses)
-    return svc
+    client = type("Client", (), {})()
+    client.chat = type("Chat", (), {})()
+    client.chat.completions = FakeCompletions(responses)
+    return LLMService(client, model="test-model")
 
 
 @pytest.mark.asyncio

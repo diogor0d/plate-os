@@ -36,7 +36,7 @@ async def parse_label(
     if not data_url.startswith("data:"):
         data_url = "data:image/jpeg;base64," + data_url
 
-    llm = get_llm()
+    llm = get_llm("vision")
     extraction = await llm.extract_json(
         system=VISION_SYSTEM,
         prompt="Extract the nutrition facts from this label image.",

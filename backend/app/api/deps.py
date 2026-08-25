@@ -53,6 +53,26 @@ async def get_default_profile(session: AsyncSession) -> UserProfile | None:
     return result.scalar_one_or_none()
 
 
+async def get_cookie_profile(
+    request: Request, session: AsyncSession = Depends(get_session)
+) -> UserProfile:
+    """Profile auth restricted to the session cookie (decision D35).
+
+    Settings endpoints deliberately do not accept the D19 bearer token: a
+    leaked automation token must not be able to redirect LLM traffic toward
+    an attacker endpoint (prompt/image exfiltration) or rewrite provider
+    credentials.
+    """
+    token = request.cookies.get(SESSION_COOKIE)
+    user_id = verify_session_token(token) if token else None
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    profile = await session.get(UserProfile, user_id)
+    if profile is None:
+        raise HTTPException(status_code=401, detail="Profile not found")
+    return profile
+
+
 async def get_current_profile(
     request: Request, session: AsyncSession = Depends(get_session)
 ) -> UserProfile:

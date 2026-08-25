@@ -1,44 +1,184 @@
-# PlateOS — fully containerized deployment (decision D17).
+# PlateOS fully containerized deployment (decisions D17 and D29-D33).
 # Nothing runs bare-metal on the host: db + api + web (Caddy) only.
-# TLS is expected to terminate at an external reverse proxy (homelab Traefik),
-# which forwards to web:8080. Set PLATEOS_COOKIE_SECURE=true behind TLS.
+# TLS is expected to terminate at an external reverse proxy,
+# which forwards to the loopback-only web origin.
+
+name: plateos
+
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     restart: unless-stopped
+    user: "70:70"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - ${PLATEOS_SECRETS_GID:?set PLATEOS_SECRETS_GID}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-plateos}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plateos}
+      POSTGRES_PASSWORD_FILE: /run/secrets/plateos_database_password
       POSTGRES_DB: ${POSTGRES_DB:-plateos}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - type: bind
+        source: ${PLATEOS_SECRETS_DIR:?set PLATEOS_SECRETS_DIR}/plateos_database_password
+        target: /run/secrets/plateos_database_password
+        read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /var/run/postgresql:size=4m,mode=0775,uid=70,gid=70
+    networks:
+      - data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-plateos}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-plateos} -d ${POSTGRES_DB:-plateos}"]
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
+    stop_grace_period: 1m
+    logging: *bounded-logging
 
   api:
-    build: ./backend
+    image: plateos-api:${PLATEOS_IMAGE_TAG:-development}
+    build:
+      context: ./backend
+      pull: true
     restart: unless-stopped
-    env_file: .env
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - ${PLATEOS_SECRETS_GID:?set PLATEOS_SECRETS_GID}
     environment:
-      # Inside the compose network the DB host is the service name.
-      PLATEOS_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-plateos}:${POSTGRES_PASSWORD:-plateos}@db:5432/${POSTGRES_DB:-plateos}
+      PLATEOS_ENVIRONMENT: production
+      PLATEOS_DATABASE_HOST: db
+      PLATEOS_DATABASE_PORT: "5432"
+      PLATEOS_DATABASE_USER: ${POSTGRES_USER:-plateos}
+      PLATEOS_DATABASE_NAME: ${POSTGRES_DB:-plateos}
+      PLATEOS_LLM_BASE_URL: ${PLATEOS_LLM_BASE_URL:-https://api.openai.com/v1}
+      PLATEOS_LLM_MODEL: ${PLATEOS_LLM_MODEL:-gpt-4o-mini}
+      PLATEOS_OPENFOODFACTS_BASE_URL: ${PLATEOS_OPENFOODFACTS_BASE_URL:-https://world.openfoodfacts.org/api/v2}
+      PLATEOS_COOKIE_SECURE: "true"
+      PLATEOS_RUNTIME_SETTINGS_FILE: /srv/data/runtime-settings.json
+      PLATEOS_DEFAULT_USER_TIMEZONE: ${PLATEOS_DEFAULT_USER_TIMEZONE:-Europe/Lisbon}
+      PLATEOS_DEFAULT_WEIGHT_KG: ${PLATEOS_DEFAULT_WEIGHT_KG:-75}
+      PLATEOS_DEFAULT_HEIGHT_CM: ${PLATEOS_DEFAULT_HEIGHT_CM:-178}
+      PLATEOS_MAX_REQUEST_BODY_BYTES: ${PLATEOS_MAX_REQUEST_BODY_BYTES:-2000000}
+    volumes:
+      - type: bind
+        source: ${PLATEOS_SECRETS_DIR:?set PLATEOS_SECRETS_DIR}
+        target: /run/secrets
+        read_only: true
+      - app_settings:/srv/data
+    tmpfs:
+      - /tmp:size=32m,mode=1777,uid=10001,gid=10001
     depends_on:
       db:
         condition: service_healthy
     expose:
       - "8000"
+    networks:
+      - data
+      - app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
+    logging: *bounded-logging
 
   web:
-    build: ./frontend
+    image: plateos-web:${PLATEOS_IMAGE_TAG:-development}
+    build:
+      context: ./frontend
+      pull: true
     restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${PLATEOS_PORT:-8080}:8080"
+    tmpfs:
+      - /config:size=4m,mode=0750,uid=10001,gid=10001
+      - /data:size=4m,mode=0750,uid=10001,gid=10001
+      - /tmp:size=16m,mode=1777,uid=10001,gid=10001
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 15s
+    logging: *bounded-logging
+
+  backup:
+    profiles:
+      - operations
+    image: plateos-backup:${PLATEOS_IMAGE_TAG:-development}
+    build:
+      context: ./ops/backup
+      pull: true
+    user: "${PLATEOS_BACKUP_UID:-1000}:${PLATEOS_BACKUP_GID:-1000}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - ${PLATEOS_SECRETS_GID:?set PLATEOS_SECRETS_GID}
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-plateos}
+      PGDATABASE: ${POSTGRES_DB:-plateos}
+    volumes:
+      - type: bind
+        source: ${PLATEOS_SECRETS_DIR:?set PLATEOS_SECRETS_DIR}/plateos_database_password
+        target: /run/secrets/plateos_database_password
+        read_only: true
+      - type: bind
+        source: ${PLATEOS_SECRETS_DIR:?set PLATEOS_SECRETS_DIR}/plateos_backup_recipient
+        target: /run/secrets/plateos_backup_recipient
+        read_only: true
+      - type: bind
+        source: ${PLATEOS_BACKUP_DIR:?set approved PLATEOS_BACKUP_DIR}
+        target: /backups
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - data
+    logging: *bounded-logging
+
+networks:
+  app:
+  data:
+    internal: true
 
 volumes:
   pgdata:
+  app_settings:

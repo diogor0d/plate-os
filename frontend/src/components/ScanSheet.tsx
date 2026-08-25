@@ -66,7 +66,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       const item = await api<FoodItem>(`/api/food-items/barcode/${encodeURIComponent(barcode)}`);
       setProposal([
         {
-          name: item.brand ? `${item.name} (${item.brand})` : item.name,
+          name: (item.brand ? `${item.name} (${item.brand})` : item.name).slice(0, 255),
           per100: {
             calories: item.calories_per_100,
             protein_g: item.protein_per_100,

@@ -3,7 +3,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { ApiError, api } from "./lib/api";
 import type { DailySummary, MealLog } from "./lib/types";
-import { flushPendingMealLogs } from "./lib/offline/db";
+import {
+  discardPendingMealLog,
+  flushPendingMealLogs,
+  getMealLogQueueState,
+  MEAL_LOG_QUEUE_CHANGED_EVENT,
+  type PendingMealLog,
+} from "./lib/offline/db";
 import { TargetBars } from "./components/TargetBars";
 import { MealList } from "./components/MealList";
 import { Assistant } from "./components/Assistant";
@@ -16,6 +22,7 @@ import { Card } from "./components/ui/card";
 // initial bundle — both tabs load on demand.
 const ScanSheet = lazy(() => import("./components/ScanSheet").then((m) => ({ default: m.ScanSheet })));
 const Analytics = lazy(() => import("./components/Analytics").then((m) => ({ default: m.Analytics })));
+const SettingsView = lazy(() => import("./components/Settings").then((m) => ({ default: m.SettingsView })));
 
 function LoginGate() {
   const qc = useQueryClient();
@@ -26,6 +33,7 @@ function LoginGate() {
     setError(null);
     try {
       await api("/api/auth/login", { method: "POST", body: JSON.stringify({ password }) });
+      await flushPendingMealLogs();
       await qc.invalidateQueries();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -58,6 +66,8 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("today");
   const [showManual, setShowManual] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
+  const [queuedCount, setQueuedCount] = useState(0);
+  const [failedQueue, setFailedQueue] = useState<PendingMealLog[]>([]);
 
   const summary = useQuery({
     queryKey: ["daily-summary"],
@@ -73,9 +83,16 @@ export default function App() {
 
   // Offline queue: flush on mount and whenever connectivity returns.
   useEffect(() => {
+    const refreshQueue = () => {
+      void getMealLogQueueState().then((state) => {
+        setQueuedCount(state.pending);
+        setFailedQueue(state.failed);
+      });
+    };
     const flush = () => {
       void flushPendingMealLogs().then((n) => {
         if (n > 0) void qc.invalidateQueries();
+        refreshQueue();
       });
     };
     const goOnline = () => {
@@ -83,12 +100,24 @@ export default function App() {
       flush();
     };
     const goOffline = () => setOnline(false);
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) flush();
+    };
     flush();
+    refreshQueue();
+    const retryTimer = window.setInterval(() => {
+      if (navigator.onLine) flush();
+    }, 30_000);
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
+    window.addEventListener(MEAL_LOG_QUEUE_CHANGED_EVENT, refreshQueue);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
+      window.clearInterval(retryTimer);
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
+      window.removeEventListener(MEAL_LOG_QUEUE_CHANGED_EVENT, refreshQueue);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [qc]);
 
@@ -104,12 +133,38 @@ export default function App() {
       <header className="space-y-3 py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold tracking-tight">PlateOS</h1>
-          {!online && <span className="text-xs text-amber-500">offline — logging queued</span>}
+          <span className={failedQueue.length ? "text-xs text-red-400" : "text-xs text-amber-500"}>
+            {failedQueue.length > 0
+              ? `${failedQueue.length} queued log${failedQueue.length === 1 ? "" : "s"} need attention`
+              : queuedCount > 0
+                ? `${queuedCount} log${queuedCount === 1 ? "" : "s"} queued`
+                : !online
+                  ? "offline - logging will queue"
+                  : ""}
+          </span>
         </div>
         <TargetBars summary={summary.data} />
       </header>
 
       <main className="flex-1 space-y-4 pb-24">
+        {failedQueue.length > 0 && (
+          <Card className="space-y-2 border-red-900/60">
+            <h2 className="text-sm font-semibold text-red-300">Queued logs needing attention</h2>
+            {failedQueue.map((item) => (
+              <div key={item.id} className="flex items-start justify-between gap-3 text-xs">
+                <div>
+                  <p className="text-zinc-200">{item.payload.custom_name ?? "Meal log"}</p>
+                  <p className="text-zinc-500">{item.lastError ?? "The server rejected this log."}</p>
+                </div>
+                {item.id !== undefined && (
+                  <Button variant="ghost" size="sm" onClick={() => void discardPendingMealLog(item.id!)}>
+                    Discard
+                  </Button>
+                )}
+              </div>
+            ))}
+          </Card>
+        )}
         {tab === "today" && (
           <section className="space-y-2">
             <div className="flex items-center justify-between">
@@ -140,6 +195,11 @@ export default function App() {
         {tab === "stats" && (
           <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-zinc-900" />}>
             <Analytics />
+          </Suspense>
+        )}
+        {tab === "settings" && (
+          <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-zinc-900" />}>
+            <SettingsView />
           </Suspense>
         )}
       </main>

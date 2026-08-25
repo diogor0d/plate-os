@@ -47,7 +47,8 @@ export interface FoodItem {
 }
 
 export interface MealLogCreate {
-  logged_at?: string | null;
+  logged_at: string;
+  client_mutation_id: string;
   food_item_id?: string | null;
   custom_name?: string | null;
   quantity_g: number;
@@ -66,6 +67,34 @@ export interface ProposalItem {
   confidence: "high" | "medium" | "low";
   reasoning: string;
   per100: Per100;
+}
+
+/** Settings screen (backend contract: RuntimeSettingsOut — keys write-only). */
+export interface ProviderConfig {
+  base_url: string | null;
+  model: string | null;
+  has_api_key: boolean;
+}
+
+export interface RuntimeSettings {
+  text: ProviderConfig;
+  vision: ProviderConfig;
+  vision_inherits_text: boolean;
+  openfoodfacts_base_url: string | null;
+  updated_at: string | null;
+}
+
+export interface ProviderConfigInput {
+  base_url?: string | null;
+  model?: string | null;
+  /** Omit to keep the stored key; "" clears; a value replaces. */
+  api_key?: string;
+}
+
+export interface RuntimeSettingsInput {
+  text: ProviderConfigInput;
+  vision: ProviderConfigInput & { inherit_text: boolean };
+  openfoodfacts_base_url?: string | null;
 }
 
 export interface DayTotals {
