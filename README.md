@@ -1,21 +1,61 @@
+<div align="center">
+
+<img src="frontend/public/logo.svg" width="88" alt="PlateOS logo" />
+
 # PlateOS
 
-Self-hosted, mobile-first PWA for daily nutrition tracking and body
-recomposition — built for one person, running on your own hardware.
+**Self-hosted nutrition tracking for one person — or a whole household.**
 
-Three fast input paths remove tracking friction:
+Barcode · Label photo · Conversational coach → one editable **Proposal Card**.
+Nothing is logged until you confirm it.
 
-1. **Barcode scan** → Open Food Facts lookup (cached server-side)
-2. **Label photo** → vision LLM extracts the nutrition table
-3. **Freeform text** → the AI coach parses *"1.5 cans of drained tuna with 100g pasta"*
+[![License](https://img.shields.io/badge/license-Apache--2.0-emerald)](LICENSE)
+![Self-hosted](https://img.shields.io/badge/self--hosted-Docker-blue)
+![PWA](https://img.shields.io/badge/installable-PWA-525252)
 
-Everything lands in an editable **Proposal Card**. Nothing touches the database
-until you confirm it.
+</div>
+
+---
+
+PlateOS is a mobile-first **and** desktop PWA for daily nutrition tracking and
+body recomposition. Three fast input paths remove the friction:
+
+| | Input path | How it works |
+|---|---|---|
+| 📷 | **Barcode scan** | ZXing / BarcodeDetector → Open Food Facts lookup, cached server-side |
+| 🏷️ | **Label photo** | Vision LLM reads the nutrition table exactly as printed |
+| 💬 | **Freeform text** | *"1.5 cans of drained tuna with 100g pasta"* → parsed by the AI coach |
+
+Every path ends in an editable **Proposal Card**: adjust grams, watch totals
+recompute instantly, then confirm.
+
+## Why it's different
+
+- **The LLM extracts; the app computes.** Models return raw printed values —
+  never arithmetic. All scaling/rounding is deterministic code mirrored
+  byte-for-byte between Python and TypeScript, covered by shared boundary tests.
+- **Two providers, zero redeploy.** Route coach text and label vision to
+  *different* OpenAI-compatible providers from the in-app Settings screen — a
+  cheap text model plus a strong vision model, or everything on local Ollama.
+  Vision inherits the text provider until you split it. Keys are write-only:
+  stored server-side, never echoed back.
+- **Offline-first.** Confirmed meals queue in IndexedDB when offline and replay
+  idempotently; permanent rejections stay visible for explicit discard.
+  The server-side mutation ledger makes retries safe across tabs and deletes.
+- **Multi-user, single file.** Household accounts with local scrypt-hashed
+  passwords. Admins create accounts and reset passwords on the server — no
+  email infrastructure, no recovery links, nothing leaves your host.
+- **Timezone-correct days.** Daily budgets group by *your* local midnight
+  (IANA tz), never UTC.
+- **Desktop-grade UI.** A navigation rail and two-column layouts on wide
+  screens; the same installable PWA stays pocket-first on phones.
+
+## Architecture
 
 ```text
 ┌────────────────────────────────────────────────────┐
-│        Client — iOS/Android PWA (Vite + React 19)  │
-│  Tailwind v4 · ZXing barcode · Dexie offline queue │
+│      Client — iOS/Android/Desktop PWA (React 19)   │
+│  Tailwind v4 · ZXing · Dexie offline queue         │
 │  canvas downscale ≤1280px WebP · Workbox SW        │
 └───────────────┬────────────────────────────────────┘
                 │ REST + SSE (HTTPS via your reverse proxy)
@@ -23,55 +63,34 @@ until you confirm it.
 │ web (Caddy) — static SPA + /api/* reverse proxy    │
 └───────────────┬────────────────────────────────────┘
 ┌───────────────▼────────────────────────────────────┐
-│ api — FastAPI · nutrition math · LLM gateway       │
-│ OFF lookup+cache · HMAC cookie auth · SSE chat     │
+│ api — FastAPI · nutrition math · per-task LLM      │
+│ OFF lookup+cache · scrypt accounts · SSE chat      │
 └──────┬─────────────────────────┬───────────────────┘
 ┌──────▼──────────┐   ┌──────────▼───────────────────┐
 │ db — PostgreSQL │   │ LLM: OpenAI / Gemini-compat /│
-│ 17 (plain)      │   │ Ollama — per-task, UI-swapped│
+│ 17 (plain)      │   │ Ollama — swapped in Settings │
 └─────────────────┘   └──────────────────────────────┘
 ```
-
-## Highlights
-
-- **LLM extracts; the app computes.** The model returns raw label values with
-  an explicit basis; all scaling, rounding, and totals are deterministic code,
-  mirrored byte-for-byte between Python and TypeScript and covered by shared
-  boundary tests.
-- **Dual providers, zero redeploy.** Route coach text and label vision to two
-  different OpenAI-compatible providers (e.g., a cheap text model + a strong
-  vision model, or everything on local Ollama) from the in-app Settings
-  screen. Vision inherits the text provider unless you split it.
-- **Offline-first.** Every confirmed meal gets a client UUID before its first
-  POST. Failed writes queue in IndexedDB and replay idempotently; permanent
-  rejections stay visible for explicit discard instead of vanishing.
-- **Idempotent by design.** A server-side mutation ledger makes replays safe
-  across tabs, retries, and deletes — reuse of a consumed key with changed
-  data, or after deletion, returns `409`.
-- **Timezone-correct days.** Daily budgets group by *your* local midnight
-  (IANA tz), never UTC.
-- **Fail-closed production.** Default or weak credentials, insecure cookies,
-  and incomplete database configs are rejected at boot. Secrets are files
-  under `/run/secrets`, never env vars in container config.
 
 ## Security posture
 
 | Control | Implementation |
 | --- | --- |
 | Origin | Caddy binds `127.0.0.1` only; TLS terminates at your reverse proxy/tunnel |
-| Containers | Non-root, read-only rootfs, `cap_drop: ALL`, `no-new-privileges`, bounded logs, digest-pinned base images |
-| Auth | Single-user HMAC-signed HttpOnly cookie (`Secure` forced in production) |
-| Provider keys | Write-only over the API; stored outside the DB/backups in a `0600` file; Settings mutations require the session cookie — the automation token cannot reach them |
-| Backups | Opt-in job: `pg_dump` → FIFO → age encryption; ciphertext published only after its checksum sidecar; guarded isolated restore drill included |
-| Inputs | 2 MB request-body cap (proxy + app), strict Pydantic bounds, IANA timezone validation |
+| Containers | Non-root, read-only rootfs, `cap_drop: ALL`, `no-new-privileges`, digest-pinned bases, bounded logs |
+| Accounts | scrypt (N=2¹⁵) hashed passwords; session = HMAC-signed HttpOnly `Secure` cookie |
+| Admin surface | User management + provider settings are admin-only and cookie-only — the automation bearer token cannot reach them |
+| Provider keys | Write-only over the API; live outside the DB/backups in a `0600` file |
+| Backups | Opt-in job: `pg_dump` → FIFO → age encryption, ciphertext published only after its checksum sidecar; guarded isolated restore drill included |
+| Inputs | 2 MB body cap (proxy + app), strict Pydantic bounds, IANA tz validation |
 
-Label photos are sent to the configured vision provider — they may leave your
-host unless that provider points at a local service such as Ollama. The
-Settings screen shows exactly which endpoint each task uses.
+> **Privacy:** label photos go to the configured vision provider — they may
+> leave your host unless that endpoint points at Ollama. Settings shows
+> exactly which endpoint each task uses.
 
 ## Quickstart (development)
 
-Prerequisites: Python 3.12, Node 22, any PostgreSQL 16+ reachable.
+Prerequisites: Python 3.12, Node 22, any PostgreSQL 16+.
 
 ```bash
 # Backend
@@ -88,7 +107,9 @@ npm install
 npm run dev                                                    # http://localhost:5173
 ```
 
-Sign in with `PLATEOS_APP_PASSWORD` from your `.env` (default `changeme`).
+Sign in with username `admin` and `PLATEOS_APP_PASSWORD` (default `changeme`).
+On first boot the app seeds that admin account — change the password in
+**Settings → Your password**, then add household accounts as you like.
 
 ## Production (fully containerized)
 
@@ -98,36 +119,36 @@ docker compose up --wait
 ```
 
 Services: `db` (PostgreSQL 17), `api` (FastAPI; runs migrations on boot),
-`web` (Caddy SPA + SSE proxy), plus an opt-in `backup` profile for age-encrypted
-dumps. Production mode requires strong file-injected secrets and serves a
-loopback-only origin — put your TLS proxy in front of it.
+`web` (Caddy SPA + SSE proxy), plus an opt-in `backup` profile producing
+age-encrypted dumps. Production mode fails closed on weak/default credentials,
+insecure cookies, and unusable database config; it serves a loopback-only
+origin behind your TLS proxy.
 
 The full procedure — secret files and permissions, backup/restore drills,
-validation matrix, abort conditions, and rollback — is documented in
+validation matrix, abort conditions, rollback — lives in
 [`docs/operations/production.md`](docs/operations/production.md).
 
-After any restore from backup, re-enter provider credentials in the Settings
-screen; they deliberately live outside the database so backups stay secret-free.
+After any restore from backup, re-enter provider credentials in Settings;
+they deliberately live outside the database so backups stay secret-free.
 
 ## Choosing LLM backends
 
-Configure per task in **Settings** (in-app, applied instantly), or set
-bootstrap defaults via env:
+Configure per task in **Settings** (applied instantly) or set env bootstrap
+defaults:
 
-| Backend | Endpoint | Model example |
+| Backend | Endpoint | Model examples |
 | --- | --- | --- |
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` / `gpt-4o` |
 | Gemini (OpenAI compat) | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.0-flash` |
 | Ollama (local, fully private) | `http://localhost:11434/v1` | `qwen2.5:7b` / `qwen2.5vl:7b` |
 
-Use **Test connection** in Settings to validate a swap before relying on it;
-failures surface there instead of silently breaking scan/coach features.
+Use **Test connection** to validate a swap before relying on it — failures
+surface there instead of silently breaking scan/coach features.
 
 ## Logging from Apple Shortcuts
 
-Set `PLATEOS_API_TOKEN`, then call any endpoint with
-`Authorization: Bearer <token>` (full API access — treat like a password).
-Example "Log food" action (*Get Contents of URL*):
+Set `PLATEOS_API_TOKEN`, then call any data endpoint with
+`Authorization: Bearer <token>` (acts as the admin account). Example:
 
 ```http
 POST https://your-host/api/meal-logs
@@ -137,15 +158,15 @@ POST https://your-host/api/meal-logs
  "source_type": "manual"}
 ```
 
-Totals are always computed server-side. For retry-safe writes, generate a UUID
-once per intended log as `client_mutation_id` and send an offset-aware
-`logged_at`; both stay optional for simple shortcuts. Note: this bearer token
-cannot read or change the Settings screen by design.
+For retry-safe writes, generate a UUID once per intended log as
+`client_mutation_id` and send an offset-aware `logged_at`. If your host sits
+behind Cloudflare Access Service Auth, also attach the
+`CF-Access-Client-Id` / `CF-Access-Client-Secret` headers.
 
-## Tests / checks
+## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest    # 58 unit/contract/integrity tests
+cd backend  && .venv/bin/python -m pytest    # 71 unit/contract/integrity tests
 cd frontend && npm test                      # mirrored math + offline queue
 cd frontend && npm run typecheck             # strict TS
 cd frontend && npm run build                 # typecheck + build + PWA generation
@@ -153,9 +174,9 @@ cd frontend && npm run build                 # typecheck + build + PWA generatio
 
 ## Project layout & decisions
 
-[`AGENTS.md`](AGENTS.md) carries the architecture map, invariants, conventions,
-and roadmap — written to onboard humans and AI agents alike. Dated,
-ADR-style decision records with rejected alternatives live in
+[`AGENTS.md`](AGENTS.md) carries the architecture map, invariants, conventions
+and roadmap — written to onboard humans and AI agents alike. Dated, ADR-style
+decision records with rejected alternatives live in
 [`docs/decisions/`](docs/decisions/).
 
 ## License

@@ -163,6 +163,8 @@ services:
     networks:
       - restore
     command: ["python", "/verify/verify_restore.py"]
+    environment:
+      PLATEOS_VERIFY_USERNAME: ${PLATEOS_VERIFY_USERNAME:-admin}
     logging: *bounded-logging
 
 networks:

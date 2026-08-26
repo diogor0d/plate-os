@@ -48,8 +48,14 @@ def verify_session_token(token: str) -> uuid.UUID | None:
         return None
 
 
-async def get_default_profile(session: AsyncSession) -> UserProfile | None:
-    result = await session.execute(select(UserProfile).limit(1))
+async def get_admin_profile(session: AsyncSession) -> UserProfile | None:
+    """Primary admin account: the D19 bearer token acts as this user."""
+    result = await session.execute(
+        select(UserProfile)
+        .where(UserProfile.is_admin.is_(True))
+        .order_by(UserProfile.created_at)
+        .limit(1)
+    )
     return result.scalar_one_or_none()
 
 
@@ -73,6 +79,15 @@ async def get_cookie_profile(
     return profile
 
 
+async def require_admin(
+    profile: UserProfile = Depends(get_cookie_profile),
+) -> UserProfile:
+    """Gate for user administration and runtime provider settings."""
+    if not profile.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return profile
+
+
 async def get_current_profile(
     request: Request, session: AsyncSession = Depends(get_session)
 ) -> UserProfile:
@@ -84,7 +99,7 @@ async def get_current_profile(
         header = request.headers.get("authorization", "")
         api_token = get_settings().api_token
         if api_token and header.startswith("Bearer ") and hmac.compare_digest(header[7:], api_token):
-            profile = await get_default_profile(session)
+            profile = await get_admin_profile(session)
             if profile is not None:
                 return profile
             raise HTTPException(status_code=500, detail="No profile seeded")

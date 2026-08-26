@@ -1,5 +1,6 @@
 import json
 import os
+import os
 from http.cookies import SimpleCookie
 from http.client import HTTPMessage
 from pathlib import Path
@@ -38,8 +39,12 @@ if request("/api/profile")[0] != 401:
     raise SystemExit("Restored API accepted an unauthenticated request")
 
 password = Path("/run/secrets/plateos_app_password").read_text(encoding="utf-8").strip()
+username = os.environ.get("PLATEOS_VERIFY_USERNAME", "").strip()
+payload: dict[str, str] = {"password": password}
+if username:
+    payload["username"] = username
 status, headers = request(
-    "/api/auth/login", method="POST", payload={"password": password}
+    "/api/auth/login", method="POST", payload=payload
 )
 if status != 200:
     raise SystemExit("Restore-only login failed")

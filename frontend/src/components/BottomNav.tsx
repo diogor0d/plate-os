@@ -3,7 +3,7 @@ import { cn } from "../lib/utils";
 
 export type Tab = "today" | "scan" | "coach" | "stats" | "settings";
 
-const TABS = [
+export const TABS = [
   { id: "today", label: "Today", icon: Home },
   { id: "scan", label: "Scan", icon: ScanLine },
   { id: "coach", label: "Coach", icon: MessageCircle },

@@ -76,6 +76,20 @@ export interface ProviderConfig {
   has_api_key: boolean;
 }
 
+/** Session identity (backend contract: MeOut). */
+export interface MeInfo {
+  username: string;
+  is_admin: boolean;
+}
+
+export interface UserRecord {
+  id: string;
+  username: string;
+  is_admin: boolean;
+  timezone: string;
+  created_at: string | null;
+}
+
 export interface RuntimeSettings {
   text: ProviderConfig;
   vision: ProviderConfig;

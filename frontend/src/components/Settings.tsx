@@ -7,7 +7,12 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Link2, Loader2, X } from "lucide-react";
 import { api } from "../lib/api";
-import type { RuntimeSettings, RuntimeSettingsInput } from "../lib/types";
+import type {
+  MeInfo,
+  RuntimeSettings,
+  RuntimeSettingsInput,
+  UserRecord,
+} from "../lib/types";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 
@@ -47,6 +52,22 @@ const eyebrow = "text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-5
 const field =
   "w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none";
 const monoField = `${field} font-mono text-xs`;
+
+function statusLine(s: TaskStatus) {
+  if (s?.busy)
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+        <Loader2 className="h-3 w-3 animate-spin" /> {"Testing\u2026"}
+      </span>
+    );
+  if (!s) return null;
+  return (
+    <span className={`text-xs ${s.ok ? "text-emerald-400" : "text-red-400"}`}>
+      {s.ok ? "OK \u00b7 " : ""}
+      {s.detail}
+    </span>
+  );
+}
 
 type TaskStatus = { busy: boolean; ok: boolean; detail: string } | null;
 
@@ -195,9 +216,12 @@ function KeyRow(props: {
 
 export function SettingsView() {
   const qc = useQueryClient();
+  const me = useQuery({ queryKey: ["me"], queryFn: () => api<MeInfo>("/api/auth/me") });
+  const isAdmin = me.data?.is_admin === true;
   const settings = useQuery({
     queryKey: ["settings"],
     queryFn: () => api<RuntimeSettings>("/api/settings"),
+    enabled: isAdmin,
   });
   const [form, setForm] = useState<FormState | null>(null);
   const [saveState, setSaveState] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -210,7 +234,6 @@ export function SettingsView() {
 
   const dirty =
     !!f && !!loadedForm && JSON.stringify(f) !== JSON.stringify(loadedForm);
-
   const save = useMutation({
     mutationFn: (payload: RuntimeSettingsInput) =>
       api<RuntimeSettings>("/api/settings", {
@@ -239,40 +262,18 @@ export function SettingsView() {
     }
   };
 
-  if (settings.isLoading || !f || !data) {
+  if (settings.isLoading || (isAdmin && (!f || !data))) {
     return <div className="h-64 animate-pulse rounded-xl bg-zinc-900" />;
   }
 
-  const patch = (p: Partial<FormState>) => setForm({ ...f, ...p });
+  const patch = (p: Partial<FormState>) => setForm({ ...f!, ...p });
 
-  const statusLine = (s: TaskStatus) =>
-    s?.busy ? (
-      <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-        <Loader2 className="h-3 w-3 animate-spin" /> {"Testing\u2026"}
-      </span>
-    ) : s ? (
-      <span className={`text-xs ${s.ok ? "text-emerald-400" : "text-red-400"}`}>
-        {s.ok ? "OK \u00b7 " : ""}
-        {s.detail}
-      </span>
-    ) : null;
-
-  return (
-    <section className="space-y-4">
-      <header className="space-y-1">
-        <h2 className="text-base font-semibold tracking-tight">AI providers</h2>
-        <p className="text-xs leading-relaxed text-zinc-500">
-          Coach replies and label scanning can use different providers. Keys are
-          stored server-side and never shown again.
-        </p>
-      </header>
-
+  const providerCards = data && f ? (
+    <>
       <Card className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">Coach replies</h3>
-          <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-            text
-          </span>
+          <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">text</span>
         </div>
         <ProviderFields
           baseUrl={f.textBaseUrl}
@@ -316,14 +317,11 @@ export function SettingsView() {
       <Card className={f.visionInherit ? "space-y-3 opacity-80" : "space-y-4"}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">Label scanning</h3>
-          <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-            vision
-          </span>
+          <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">vision</span>
         </div>
         {f.visionInherit ? (
           <p className="text-xs text-zinc-500">
-            Uses the coach provider above. Split it when you want a cheap text
-            model and a stronger vision model.
+            Uses the coach provider above. Split it when you want a cheap text model and a stronger vision model.
           </p>
         ) : (
           <>
@@ -378,7 +376,7 @@ export function SettingsView() {
         </Button>
       </Card>
 
-      <div className="sticky bottom-20 space-y-2">
+      <div className="sticky bottom-20 space-y-2 md:static">
         {saveState && (
           <p className={`flex items-center gap-1.5 text-xs ${saveState.ok ? "text-emerald-400" : "text-red-400"}`}>
             {saveState.ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
@@ -404,6 +402,135 @@ export function SettingsView() {
         </div>
         {dirty && <p className="text-center text-[11px] text-zinc-600">Unsaved changes apply after saving.</p>}
       </div>
+    </>
+  ) : null;
+
+  return (
+    <section className="mx-auto max-w-xl space-y-4 lg:max-w-2xl">
+      <AccountCard />
+
+      {isAdmin ? (
+        <>
+          <header className="space-y-1 pt-2">
+            <h2 className="text-base font-semibold tracking-tight">AI providers</h2>
+            <p className="text-xs leading-relaxed text-zinc-500">
+              Coach replies and label scanning can use different providers. Keys are stored server-side and never shown again.
+            </p>
+          </header>
+          {providerCards}
+          <UsersCard />
+        </>
+      ) : (
+        <p className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 text-xs text-zinc-500">
+          Provider configuration is managed by an admin account.
+        </p>
+      )}
     </section>
+  );
+}
+
+function AccountCard() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [state, setState] = useState<{ ok: boolean; msg: string } | null>(null);
+  const change = useMutation({
+    mutationFn: () =>
+      api("/api/users/me/password", {
+        method: "PATCH",
+        body: JSON.stringify({ current_password: current, new_password: next }),
+      }),
+    onSuccess: () => {
+      setCurrent("");
+      setNext("");
+      setState({ ok: true, msg: "Password updated" });
+    },
+    onError: (err) => setState({ ok: false, msg: err.message }),
+  });
+  return (
+    <Card className="space-y-3">
+      <h3 className="text-sm font-semibold">Your password</h3>
+      <input type="password" className={field} placeholder="Current password" value={current}
+        onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
+      <input type="password" className={field} placeholder={`New password (${12}+ characters)`} value={next}
+        onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
+      {state && <p className={`text-xs ${state.ok ? "text-emerald-400" : "text-red-400"}`}>{state.msg}</p>}
+      <Button size="sm" disabled={!current || !next || change.isPending} onClick={() => change.mutate()}>
+        Update password
+      </Button>
+    </Card>
+  );
+}
+
+function UsersCard() {
+  const qc = useQueryClient();
+  const users = useQuery({ queryKey: ["users"], queryFn: () => api<UserRecord[]>("/api/users") });
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [resets, setResets] = useState<Record<string, string>>({});
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const create = useMutation({
+    mutationFn: () =>
+      api("/api/users", { method: "POST", body: JSON.stringify({ username: username.trim(), password }) }),
+    onSuccess: async () => {
+      setUsername("");
+      setPassword("");
+      setMsg({ ok: true, text: "Account created" });
+      await qc.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (err) => setMsg({ ok: false, text: err.message }),
+  });
+  const reset = useMutation({
+    mutationFn: ({ id, newPassword }: { id: string; newPassword: string }) =>
+      api(`/api/users/${id}/password`, { method: "PATCH", body: JSON.stringify({ new_password: newPassword }) }),
+    onSuccess: async (_d, vars) => {
+      setMsg({ ok: true, text: `Password reset for ${vars.id.slice(0, 8)}\u2026` });
+      setResets((r) => ({ ...r, [vars.id]: "" }));
+    },
+    onError: (err) => setMsg({ ok: false, text: err.message }),
+  });
+
+  return (
+    <Card className="space-y-4">
+      <h3 className="text-sm font-semibold">Accounts</h3>
+      {msg && <p className={`text-xs ${msg.ok ? "text-emerald-400" : "text-red-400"}`}>{msg.text}</p>}
+      <div className="space-y-2">
+        {(users.data ?? []).map((u) => (
+          <div key={u.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-800 p-2.5">
+            <span className="min-w-24 text-sm text-zinc-200">{u.username}</span>
+            {u.is_admin && (
+              <span className="rounded border border-zinc-700 px-1 py-px text-[9px] uppercase tracking-wide text-zinc-500">
+                admin
+              </span>
+            )}
+            <input
+              type="password"
+              className={`${field} ml-auto h-8 w-44 py-1 text-xs`}
+              placeholder="New password"
+              value={resets[u.id] ?? ""}
+              onChange={(e) => setResets((r) => ({ ...r, [u.id]: e.target.value }))}
+              autoComplete="new-password"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!(resets[u.id] ?? "").length || reset.isPending}
+              onClick={() => reset.mutate({ id: u.id, newPassword: resets[u.id] })}
+            >
+              Reset
+            </Button>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
+        <input className={`${field} h-9 w-36 py-1 text-sm`} placeholder="username" value={username}
+          onChange={(e) => setUsername(e.target.value)} autoComplete="off" />
+        <input type="password" className={`${field} h-9 w-44 py-1 text-sm`} placeholder="password" value={password}
+          onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+        <Button size="sm" disabled={!username.trim() || !password || create.isPending} onClick={() => create.mutate()}>
+          Add account
+        </Button>
+      </div>
+    </Card>
   );
 }

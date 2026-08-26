@@ -91,8 +91,8 @@ if ! profile_count="$(psql --no-psqlrc --tuples-only --no-align \
     echo "Database is missing the PlateOS profile table" >&2
     exit 1
 fi
-if [ "$profile_count" != "1" ]; then
-    echo "PlateOS single-user invariant is invalid; backup refused" >&2
+if [ "$profile_count" -lt 1 ]; then
+    echo "PlateOS account invariant invalid (no users); backup refused" >&2
     exit 1
 fi
 

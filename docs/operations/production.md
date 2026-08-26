@@ -54,7 +54,7 @@ rotation, and recovery remain `TBD`.
 | File | Consumer | Requirement |
 | --- | --- | --- |
 | `plateos_database_password` | DB, API, backup | Unique, random, at least 24 characters |
-| `plateos_app_password` | API | Unique, at least 16 characters; store in password manager |
+| `plateos_app_password` | API | Bootstrap **admin** password; at least 16 characters. Changeable per-account in the app afterwards (D36); store in password manager |
 | `plateos_session_secret` | API | Random, at least 32 characters |
 | `plateos_llm_api_key` | API | Optional; only for a provider requiring a key |
 | `plateos_api_token` | API | Optional; random, at least 32 characters; full API access |
@@ -239,7 +239,10 @@ files mode `0440`, containing:
 
 - `plateos_restore_identity`: recovered age private identity.
 - `plateos_restore_database_password`: new random drill-only DB password.
-- `plateos_app_password`: new drill-only application password.
+- `plateos_app_password`: new drill-only application password (becomes the
+  restored admin's password via bootstrap).
+- Set `PLATEOS_VERIFY_USERNAME` if the source system's admin username differs
+  from `admin`.
 - `plateos_session_secret`: new random drill-only signing secret.
 
 The encrypted archive must also be readable by the restore supplementary group.

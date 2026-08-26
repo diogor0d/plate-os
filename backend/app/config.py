@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     # Single-user auth: one password, one signed HttpOnly cookie (decision D6).
     app_password: str = "changeme"
     session_secret: str = "changeme"
+    # Username for the bootstrap admin account (decision D36).
+    admin_username: str = "admin"
     # Set to true when served behind TLS (homelab reverse proxy).
     cookie_secure: bool = False
 

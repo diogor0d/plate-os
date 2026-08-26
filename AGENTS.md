@@ -67,7 +67,7 @@ and restore drills use a separate internal-only Compose project (D31-D33).
 | ORM/migrations | SQLAlchemy 2.0 async + Alembic + asyncpg | D3 |
 | Database | PostgreSQL 17, plain | D4 |
 | LLM | one OpenAI-compatible client per task; text (coach) and vision (labels) resolve independently — UI overrides then env defaults, vision inherits text unless split (D34/D35) | D5, D34 |
-| Auth | password + HMAC-signed HttpOnly cookie, single user | D6, D11 |
+| Auth | password + HMAC-signed HttpOnly cookie; multi-user accounts with scrypt hashes, first account admin (D11 → D36) | D6, D11, D36 |
 | Barcode | @zxing/browser primary; BarcodeDetector fast path | D7 |
 | Offline | Dexie queue, poison-pill protected | D8 |
 | Streaming | SSE (single structured call; deltas server-chunked) | D9 |
@@ -128,7 +128,8 @@ plate-os/
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /auth/login` · `POST /auth/logout` | cookie session |
+| `POST /auth/login` · `POST /auth/logout` | username-aware cookie session; password-only allowed while one account exists |
+| `GET /auth/me` · `GET/POST /users`, `PATCH /users/me/password`, `PATCH /users/{id}/password` | account identity; admin-only household management + local resets (D36) |
 | `GET/PUT /profile` | targets, anthropometrics, timezone |
 | `GET/POST /food-items`, `GET /food-items/barcode/{code}` | library + OFF cache-aside |
 | `GET/POST /meal-logs`, `PATCH/DELETE /meal-logs/{id}` | CRUD; server-computed totals; optional replay-safe mutation UUID |
@@ -166,7 +167,7 @@ cp ../.env.example .env   # adjust
 
 **Full stack:** production-shaped Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin (local default `http://127.0.0.1:8080`). API runs migrations on boot. Never reuse development credentials in this flow.
 
-**Verification expectations:** 58 pytest tests (nutrition math, validation, integrity, LLM, auth, production settings, request limits, readiness, runtime settings); 8 Vitest tests for mirrored math and the offline queue; `tsc --noEmit` clean; OpenAPI lists 16 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The hardened local Docker/PostgreSQL smoke, synthetic backup, and isolated restore drill passed 2026-08-25 (see D29-D33); production evidence is separate.
+**Verification expectations:** 71 pytest tests (nutrition math, validation, integrity, LLM, auth, accounts, production settings, request limits, readiness, runtime settings); 8 Vitest tests for mirrored math and the offline queue; `tsc --noEmit` clean; OpenAPI lists 20 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The hardened local Docker/PostgreSQL smoke, synthetic backup, and isolated restore drill passed 2026-08-25 (see D29-D33); production evidence is separate.
 
 ## 8. Conventions & gotchas
 
@@ -196,6 +197,7 @@ cp ../.env.example .env   # adjust
 - [x] Hardened Compose smoke: built images, initialized PostgreSQL as non-root/read-only, applied populated `0001 → 0002`, verified headers/body limits/SSE/readiness (2026-08-25)
 - [x] Synthetic encrypted backup and isolated application restore drill, including checksum, restored reads, source-count comparison, and non-empty-target refusal (2026-08-25)
 - [x] Dual-provider LLM routing + Settings screen: per-task providers, write-only keys, cookie-only mutations, runtime file outside DB/backups (2026-08-25)
+- [x] Multi-user household accounts: scrypt credentials, admin management, local password reset, admin-gated provider settings, desktop navigation layout (D36, 2026-08-26)
 - [ ] Production recovery operations: choose destination, schedule, retention, RPO/RTO, monitoring, and execute an authorized restore drill from a production backup
 - [ ] Real LLM round-trips (point `PLATEOS_LLM_BASE_URL` at OpenAI/Gemini/Ollama and exercise vision + chat)
 - [ ] iOS device testing: camera in standalone PWA, install/offline behavior, safe areas

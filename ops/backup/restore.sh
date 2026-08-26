@@ -122,8 +122,8 @@ case "$revision" in
         exit 1
         ;;
 esac
-if [ "$profile_count" != "1" ]; then
-    echo "Restored single-user invariant is invalid" >&2
+if [ "$profile_count" -lt 1 ]; then
+    echo "Restored account invariant is invalid (no users)" >&2
     exit 1
 fi
 

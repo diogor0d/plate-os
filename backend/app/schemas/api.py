@@ -22,7 +22,53 @@ SourceType = Literal["vision_label", "text_estimate", "manual", "barcode"]
 
 
 class LoginRequest(BaseModel):
+    """Username is optional only while exactly one account exists."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    username: str | None = Field(default=None, min_length=3, max_length=32)
     password: str = Field(min_length=1, max_length=1024)
+
+
+class MeOut(BaseModel):
+    username: str
+    is_admin: bool
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    username: str
+    is_admin: bool
+    timezone: str
+    created_at: datetime | None = None
+
+
+class UserCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=1, max_length=128)
+    timezone: str = Field(default="Europe/Lisbon", min_length=1, max_length=64)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_tz(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("must be a valid IANA timezone") from exc
+        return value
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=1, max_length=128)
+
+
+class PasswordReset(BaseModel):
+    new_password: str = Field(min_length=1, max_length=128)
 
 
 class UserProfileOut(BaseModel):

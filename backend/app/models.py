@@ -15,6 +15,14 @@ class UserProfile(Base):
     __tablename__ = "user_profile"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Local account credentials (decision D36). Nullable for the 0002-era row;
+    # startup bootstrap fills them from env secrets before first login.
+    username: Mapped[str | None] = mapped_column(String(32), unique=True)
+    password_hash: Mapped[str | None] = mapped_column(String(256))
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     weight_kg: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     height_cm: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     target_calories: Mapped[int] = mapped_column(nullable=False, default=2400)

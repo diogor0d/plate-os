@@ -1,7 +1,7 @@
 """Settings screen API (decisions D34/D35).
 
 Read/mutate runtime provider configuration and probe providers. All routes
-are cookie-session-only (see get_cookie_profile). API keys are write-only:
+are admin-only and cookie-session-only (see require_admin). API keys are write-only:
 they are never returned to any client, only a has_api_key boolean.
 """
 
@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_cookie_profile
+from app.api.deps import require_admin
 from app.models import UserProfile
 from app.schemas.api import (
     ProviderConfigOut,
@@ -65,7 +65,7 @@ def _apply_provider(
 
 @router.get("", response_model=RuntimeSettingsOut)
 async def read_settings(
-    _profile: UserProfile = Depends(get_cookie_profile),
+    _profile: UserProfile = Depends(require_admin),
 ):
     return _to_out(runtime_settings.load_runtime_state())
 
@@ -73,7 +73,7 @@ async def read_settings(
 @router.put("", response_model=RuntimeSettingsOut)
 async def update_settings(
     body: RuntimeSettingsIn,
-    _profile: UserProfile = Depends(get_cookie_profile),
+    _profile: UserProfile = Depends(require_admin),
 ):
     state = runtime_settings.load_runtime_state()
     _apply_provider(state.text, body.text)
@@ -92,7 +92,7 @@ async def update_settings(
 @router.post("/test", response_model=SettingsTestResponse)
 async def test_provider(
     body: SettingsTestRequest,
-    _profile: UserProfile = Depends(get_cookie_profile),
+    _profile: UserProfile = Depends(require_admin),
 ):
     try:
         reply = await get_llm(body.task).probe()
