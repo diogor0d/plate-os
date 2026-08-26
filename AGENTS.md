@@ -7,7 +7,7 @@
 
 ## 1. What PlateOS is
 
-PlateOS is a **mobile-first, self-hosted PWA for daily nutrition tracking and body recomposition**, built for a single user (Diogo) on an iOS-first device. It removes tracking friction with three input paths:
+PlateOS is a **mobile-first, self-hosted PWA for daily nutrition tracking and body recomposition**, built for a single operator (household accounts since D36) on an iOS-first device. It removes tracking friction with three input paths:
 
 1. **Barcode scan** → Open Food Facts lookup (server-cached in Postgres)
 2. **Label photo** → Vision LLM extracts the nutrition table

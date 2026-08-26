@@ -41,7 +41,7 @@ def test_valid_password_accepted():
 
 @pytest.mark.parametrize(
     ("name", "ok"),
-    [("admin", True), ("diogo", True), ("ab", False), ("Bad Name", False), ("x" * 33, False)],
+    [("admin", True), ("kai", True), ("ab", False), ("Bad Name", False), ("x" * 33, False)],
 )
 def test_username_policy(name, ok):
     if ok:
