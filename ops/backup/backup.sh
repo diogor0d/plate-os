@@ -79,7 +79,7 @@ if ! revision="$(psql --no-psqlrc --tuples-only --no-align \
     exit 1
 fi
 case "$revision" in
-    0001|0002) ;;
+    0001|0002|0003) ;;
     *)
         echo "Database schema revision is unsupported for backup" >&2
         exit 1
