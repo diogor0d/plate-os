@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, Sparkles } from "lucide-react";
 import { ApiError, api } from "./lib/api";
 import type { DailySummary, MealLog, MeInfo } from "./lib/types";
 import {
@@ -18,6 +18,7 @@ import { BottomNav, type Tab } from "./components/BottomNav";
 import { DesktopHeader } from "./components/DesktopHeader";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
+import type { AnalyticsIntent, AssistantLaunch, AssistantMode } from "./lib/assistant";
 
 // Code-split: keeps ZXing (camera pipeline), Recharts (charts) and the admin
 // settings surface out of the initial bundle — all load on demand.
@@ -39,7 +40,7 @@ function LoginGate() {
         body: JSON.stringify({ username: username.trim(), password }),
       });
       await flushPendingMealLogs();
-      await qc.invalidateQueries();
+      qc.clear();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -102,6 +103,8 @@ export default function App() {
   const [online, setOnline] = useState(navigator.onLine);
   const [queuedCount, setQueuedCount] = useState(0);
   const [failedQueue, setFailedQueue] = useState<PendingMealLog[]>([]);
+  const [assistantLaunch, setAssistantLaunch] = useState<AssistantLaunch | null>(null);
+  const [analyticsIntent, setAnalyticsIntent] = useState<AnalyticsIntent | null>(null);
 
   const me = useQuery({
     queryKey: ["me"],
@@ -111,7 +114,7 @@ export default function App() {
 
   const logout = useMutation({
     mutationFn: () => api("/api/auth/logout", { method: "POST" }),
-    onSuccess: () => qc.invalidateQueries(),
+    onSuccess: () => qc.clear(),
   });
 
   const summary = useQuery({
@@ -169,6 +172,21 @@ export default function App() {
   const deleteLog = async (id: string) => {
     await api(`/api/meal-logs/${id}`, { method: "DELETE" });
     await qc.invalidateQueries();
+  };
+
+  const launchAssistant = (
+    prompt: string,
+    mode: AssistantMode,
+    surface: AssistantLaunch["surface"],
+    analytics?: Omit<AnalyticsIntent, "id">,
+  ) => {
+    setAssistantLaunch({ id: crypto.randomUUID(), prompt, mode, surface, analytics });
+    setTab("coach");
+  };
+
+  const openAnalytics = (intent: AnalyticsIntent) => {
+    setAnalyticsIntent(intent);
+    setTab("stats");
   };
 
   if (summary.error instanceof ApiError && summary.error.status === 401) return <LoginGate />;
@@ -242,9 +260,14 @@ export default function App() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-medium text-zinc-400 md:hidden lg:block">Today's logs</h2>
-                  <Button variant="outline" size="sm" onClick={() => setShowManual((v) => !v)}>
-                    <Plus className="h-3 w-3" /> Quick log
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => launchAssistant("Help me plan the rest of today based on what I have logged and what remains.", "coach", "today")}>
+                      <Sparkles className="h-3 w-3" /> Plan with AI
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setShowManual((v) => !v)}>
+                      <Plus className="h-3 w-3" /> Quick log
+                    </Button>
+                  </div>
                 </div>
                 {showManual && (
                   <Card>
@@ -269,10 +292,20 @@ export default function App() {
               <ScanSheet onClose={() => setTab("today")} />
             </Suspense>
           )}
-          {tab === "coach" && <Assistant />}
+          <div className={tab === "coach" ? "block" : "hidden"}>
+            <Assistant launch={assistantLaunch} onOpenAnalytics={openAnalytics} />
+          </div>
           {tab === "stats" && (
             <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-zinc-900" />}>
-              <Analytics />
+              <Analytics
+                intent={analyticsIntent}
+                onAskCoach={(view) => launchAssistant(
+                  "Analyze the current statistics view. Explain the most useful pattern, any data-quality limitation, and suggest one next action.",
+                  "analytics",
+                  "stats",
+                  view,
+                )}
+              />
             </Suspense>
           )}
           {tab === "settings" && (

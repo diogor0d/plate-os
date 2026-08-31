@@ -121,7 +121,8 @@ plate-os/
         │   └── offline/db.ts  ← Dexie pending-queue + flush
         └── components/        ├── ui/ (Button, Card) · TargetBars · MealList
                                 · ProposalCard · ScanSheet (lazy) · Assistant
-                                · Analytics (lazy, Recharts) · ManualEntry
+                                · Analytics (lazy, Recharts) · AssistantBlocks
+                                · GoalChangeReview · ManualEntry
                                 · DesktopHeader (md+) · BottomNav (mobile only)
 ```
 
@@ -138,7 +139,7 @@ plate-os/
 | `GET /analytics/daily` | tz-aware ranges + source/food filters, summaries, history, source mix, top foods (D20/D38) |
 | `POST /vision/parse-label` | LLM extraction → normalized per-100g; **stateless, never writes** |
 | `GET/PUT /settings`, `POST /settings/test` | UI-managed provider config; keys write-only; cookie-session-only |
-| `POST /chat/stream` | SSE: `delta` → `proposal` → `done` (or `error`); persists chat only |
+| `POST /chat/stream` | SSE harness: `meta` → `delta` → typed `block` → `done`; persists chat only (D39) |
 | `GET /health` · `GET /ready` | dependency-free liveness · DB/schema/profile readiness |
 
 Conventions: DTOs in `app/schemas/api.py`; the single profile row is resolved by the `get_current_profile` dependency; 401 means re-login. Auth accepts the session cookie **or** — for Apple Shortcuts/automation — `Authorization: Bearer $PLATEOS_API_TOKEN` when configured (decision D19; full API access, rotate the production secret file and restart the API). **Every new `Settings` field must be added to `.env.example` in the same change** (rule from D19's postmortem).
@@ -149,6 +150,7 @@ Conventions: DTOs in `app/schemas/api.py`; the single profile row is resolved by
 - Settings presets include OpenAI, Gemini, Ollama, and DeepSeek. DeepSeek text uses `deepseek-v4-flash`; official hosted vision uses the experimental `deepseek-v4-flash-vision-exp` and must be configured as a separate vision provider rather than inheriting the text model.
 - Runtime provider config lives in `PLATEOS_RUNTIME_SETTINGS_FILE` (JSON, outside the DB/backups). API keys are write-only over the API; Settings mutations are cookie-session-only — the bearer token cannot reach them. After a restore drill, re-enter provider config (D35).
 - New LLM tasks = new Pydantic contract in `schemas/llm_contracts.py` + call via `LLMService.extract_json()` (JSON mode → validate → one corrective retry).
+- Assistant output is a strict D39 block union (`meal_proposal`, `goal_draft`, `analytics_navigation`, `evidence_insight`). Never add generic URL/method/payload actions or execute model output directly. Context is server-built, user-scoped, and mode-minimized; body measurements are goals-only.
 - The chat system prompt gets fresh context injected per turn (`build_context` in `routes/chat.py`): local datetime, today's consumed/remaining, last-3-days trend. Extend there, not by hand-editing prompts elsewhere.
 - Privacy: default assumption is that label photos may leave the host unless the resolved vision endpoint points at Ollama. Say this in any UI/docs touching vision features.
 
@@ -169,7 +171,7 @@ cp ../.env.example .env   # adjust
 
 **Full stack:** production-shaped Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin (local default `http://127.0.0.1:8080`). API runs migrations on boot. Never reuse development credentials in this flow.
 
-**Verification expectations:** 81 pytest tests (nutrition math, validation, integrity, analytics, LLM, auth, accounts, production settings, request limits, readiness, runtime settings, recovery guards); 13 Vitest tests for mirrored math, analytics helpers, and the offline queue; `tsc --noEmit` clean; OpenAPI lists 20 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The hardened local Docker/PostgreSQL smoke, synthetic backup, and isolated restore drill passed 2026-08-25 (see D29-D33); production evidence is separate.
+**Verification expectations:** 93 pytest tests (nutrition math, validation, integrity, analytics, AI harness/LLM, auth, accounts, production settings, request limits, readiness, runtime settings, recovery guards); 20 Vitest tests for mirrored math, analytics/harness helpers, and the offline queue; `tsc --noEmit` clean; OpenAPI lists 19 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The hardened local Docker/PostgreSQL smoke, synthetic backup, and isolated restore drill passed 2026-08-25 (see D29-D33); production evidence is separate.
 
 ## 8. Conventions & gotchas
 
@@ -202,6 +204,7 @@ cp ../.env.example .env   # adjust
 - [x] Multi-user household accounts: scrypt credentials, admin management, local password reset, admin-gated provider settings, desktop navigation layout (D36, 2026-08-26)
 - [x] Desktop navigation redesign: horizontal control deck, mobile-only bottom navigation, natural document scrolling (D37, 2026-08-31)
 - [x] Filterable analytics workspace: custom ranges, source/food filters, nutrient and weekday trends, source mix, top foods (D38, 2026-08-31)
+- [x] Constrained AI harness: contextual meal ideas, goal drafts, evidence insights, and safe Stats navigation (D39, 2026-08-31)
 - [ ] Production recovery operations: choose destination, schedule, retention, RPO/RTO, monitoring, and execute an authorized restore drill from a production backup
 - [ ] Real LLM round-trips (point `PLATEOS_LLM_BASE_URL` at OpenAI/Gemini/DeepSeek/Ollama and exercise vision + chat)
 - [ ] iOS device testing: camera in standalone PWA, install/offline behavior, safe areas

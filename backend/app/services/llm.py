@@ -11,6 +11,7 @@ with one corrective retry. This works uniformly across all three providers,
 unlike provider-specific structured-output APIs.
 """
 
+import json
 from typing import TypeVar
 
 from openai import AsyncOpenAI
@@ -24,8 +25,8 @@ MAX_ATTEMPTS = 2
 
 SCHEMA_PREAMBLE = (
     "\n\nRespond with a single JSON object and nothing else — no markdown "
-    "fences, no commentary. Report numbers exactly as extracted; never "
-    "perform arithmetic, scaling, or summation yourself."
+    "fences, no commentary. For nutrition proposals, report reference values "
+    "per 100 g and quantity separately; never scale or sum nutrients yourself."
 )
 
 
@@ -73,8 +74,12 @@ class LLMService:
         schema: type[T],
         image_data_urls: list[str] | None = None,
     ) -> T:
+        schema_json = json.dumps(schema.model_json_schema(), separators=(",", ":"))
         messages: list[dict] = [
-            {"role": "system", "content": system + SCHEMA_PREAMBLE},
+            {
+                "role": "system",
+                "content": system + SCHEMA_PREAMBLE + "\n\nRequired JSON Schema:\n" + schema_json,
+            },
             {"role": "user", "content": self._content(prompt, image_data_urls)},
         ]
         last_error: Exception | None = None
@@ -84,6 +89,7 @@ class LLMService:
                 messages=messages,  # type: ignore[arg-type]
                 response_format={"type": "json_object"},
                 temperature=0.1,
+                max_tokens=2000,
             )
             raw = resp.choices[0].message.content or ""
             try:
@@ -95,7 +101,7 @@ class LLMService:
                     {
                         "role": "user",
                         "content": (
-                            f"Your JSON failed validation with: {exc}. "
+                            f"Your JSON failed validation with: {str(exc)[:1500]}. "
                             "Respond again with a corrected JSON object only."
                         ),
                     }

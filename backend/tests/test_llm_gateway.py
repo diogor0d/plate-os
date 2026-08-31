@@ -78,7 +78,9 @@ async def test_schema_preamble_forbids_arithmetic():
     )
     call = svc._client.chat.completions.calls[0]
     system_content = call["messages"][0]["content"]
-    assert "never" in system_content and "arithmetic" in system_content
+    assert "never" in system_content and "scale or sum nutrients" in system_content
+    assert "Required JSON Schema" in system_content
+    assert call["max_tokens"] == 2000
     user_content = call["messages"][1]["content"]
     assert isinstance(user_content, list)  # multimodal blocks
     assert user_content[0]["image_url"]["url"].startswith("data:image/webp")

@@ -1,4 +1,4 @@
-import { useDeferredValue, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
@@ -24,6 +24,7 @@ import {
 } from "../lib/analytics";
 import { api } from "../lib/api";
 import type { AnalyticsResponse, SourceType } from "../lib/types";
+import type { AnalyticsIntent } from "../lib/assistant";
 import { Card } from "./ui/card";
 
 const EMERALD = "#10b981";
@@ -58,7 +59,13 @@ function Stat({ label, value, detail }: { label: string; value: string; detail: 
   );
 }
 
-export function Analytics() {
+export function Analytics({
+  intent,
+  onAskCoach,
+}: {
+  intent: AnalyticsIntent | null;
+  onAskCoach: (view: Omit<AnalyticsIntent, "id">) => void;
+}) {
   const [days, setDays] = useState(30);
   const [customRange, setCustomRange] = useState(false);
   const [start, setStart] = useState(() => {
@@ -71,6 +78,22 @@ export function Analytics() {
   const [foodQuery, setFoodQuery] = useState("");
   const [metric, setMetric] = useState<AnalyticsMetric>("calories");
   const deferredFoodQuery = useDeferredValue(foodQuery);
+
+  useEffect(() => {
+    if (!intent) return;
+    if (intent.start && intent.end) {
+      setCustomRange(true);
+      setStart(intent.start);
+      setEnd(intent.end);
+    } else {
+      setCustomRange(false);
+      setDays(intent.days ?? 30);
+    }
+    setSources(intent.sourceTypes);
+    setFoodQuery(intent.foodQuery ?? "");
+    setMetric(intent.metric);
+  }, [intent]);
+
   const validRange = !customRange || (!!start && !!end && start <= end);
   const queryString = buildAnalyticsQuery({
     days: customRange ? undefined : days,
@@ -186,6 +209,20 @@ export function Analytics() {
               Clear filters
             </button>
           )}
+          <button
+            type="button"
+            className="ml-auto rounded-lg border border-emerald-900/60 bg-emerald-950/10 px-3 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-950/30"
+            onClick={() => onAskCoach({
+              days: customRange ? undefined : days,
+              start: customRange ? start : undefined,
+              end: customRange ? end : undefined,
+              metric,
+              sourceTypes: sources,
+              foodQuery: foodQuery || undefined,
+            })}
+          >
+            Ask coach about this view
+          </button>
         </div>
         {!validRange && <p className="text-xs text-red-400">The end date must be on or after the start date.</p>}
       </Card>

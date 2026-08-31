@@ -60,13 +60,20 @@ export interface MealLogCreate {
 export interface ProposalItem {
   name: string;
   estimated_weight_g: number;
-  calories: number;
-  protein_g: number;
-  carbs_g: number;
-  fat_g: number;
   confidence: "high" | "medium" | "low";
   reasoning: string;
   per100: Per100;
+}
+
+export interface UserProfile {
+  id: string;
+  weight_kg: number;
+  height_cm: number;
+  target_calories: number;
+  target_protein_g: number;
+  target_carbs_g: number;
+  target_fat_g: number;
+  timezone: string;
 }
 
 /** Settings screen (backend contract: RuntimeSettingsOut — keys write-only). */

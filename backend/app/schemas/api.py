@@ -281,8 +281,32 @@ class VisionParseResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
     message: str = Field(min_length=1, max_length=2000)
     session_id: uuid.UUID | None = None
+    mode: Literal["coach", "goals", "analytics"] = "coach"
+    surface: Literal["today", "coach", "stats"] = "coach"
+    analytics_days: int | None = Field(default=None, ge=1, le=366)
+    analytics_start: date | None = None
+    analytics_end: date | None = None
+    analytics_metric: Literal["calories", "protein_g", "carbs_g", "fat_g", "fiber_g"] | None = None
+    analytics_sources: list[SourceType] = Field(default_factory=list, max_length=4)
+    analytics_food_query: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_analytics_context(self) -> "ChatRequest":
+        custom = self.analytics_start is not None or self.analytics_end is not None
+        if self.analytics_days is not None and custom:
+            raise ValueError("analytics context must use days or custom dates")
+        if (self.analytics_start is None) != (self.analytics_end is None):
+            raise ValueError("analytics_start and analytics_end are required together")
+        if self.analytics_start and self.analytics_end:
+            if self.analytics_end < self.analytics_start:
+                raise ValueError("analytics_end must not precede analytics_start")
+            if (self.analytics_end - self.analytics_start).days + 1 > 366:
+                raise ValueError("analytics context is limited to 366 days")
+        return self
 
 
 # --- Settings screen (decisions D34/D35) ---------------------------------

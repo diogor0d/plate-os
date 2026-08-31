@@ -6,7 +6,8 @@ performs any arithmetic — all math lives in app.services.nutrition and its
 client-side mirror frontend/src/lib/nutrition.ts.
 """
 
-from typing import Literal
+from datetime import date
+from typing import Annotated, Literal
 
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -84,20 +85,15 @@ class NutritionLabelExtraction(BaseModel):
 
 
 class FoodItemProposal(BaseModel):
-    """One item inside a proposal card. Macro values are the LLM's estimate for
-    the stated weight; per100 is included so the client can recompute totals
-    deterministically when the user edits quantities."""
+    """One proposal item: reference density plus estimated quantity only."""
 
-    model_config = ConfigDict(str_strip_whitespace=True, allow_inf_nan=False)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, allow_inf_nan=False)
 
     name: str = Field(min_length=1, max_length=255)
+    basis: Literal["per_100g"] = "per_100g"
     estimated_weight_g: float = Field(ge=0.01, le=10000, allow_inf_nan=False)
-    calories: float = Field(ge=0)
-    protein_g: float = Field(ge=0)
-    carbs_g: float = Field(ge=0)
-    fat_g: float = Field(ge=0)
     confidence: Literal["high", "medium", "low"]
-    reasoning: str = Field(description="Brief portion assumptions (raw vs cooked, oil, etc.)")
+    reasoning: str = Field(min_length=1, max_length=500, description="Brief portion assumptions")
     per100: Per100Values
 
     @field_validator("estimated_weight_g")
@@ -108,14 +104,113 @@ class FoodItemProposal(BaseModel):
         )
 
 
-class LogProposalResponse(BaseModel):
-    """Assistant tool-call contract for freeform meal text.
+class GoalTargets(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    requires_user_confirmation is hard-coded True: proposals are ALWAYS shown
-    as an editable card and only persisted after explicit user confirmation
-    (decision D2 of the product brief: zero silent database mutations).
-    """
+    target_calories: int = Field(ge=800, le=6000)
+    target_protein_g: int = Field(ge=20, le=400)
+    target_carbs_g: int = Field(ge=0, le=800)
+    target_fat_g: int = Field(ge=20, le=300)
+
+
+class MealProposalBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    type: Literal["meal_proposal"]
+    title: str = Field(min_length=1, max_length=100)
+    items: list[FoodItemProposal] = Field(min_length=1, max_length=8)
+    requires_user_confirmation: Literal[True] = True
+
+
+class GoalDraftBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    type: Literal["goal_draft"]
+    proposed_targets: GoalTargets
+    rationale: str = Field(min_length=1, max_length=800)
+    caveats: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
+        default_factory=list, max_length=5
+    )
+    requires_user_confirmation: Literal[True] = True
+
+
+AnalyticsMetric = Literal["calories", "protein_g", "carbs_g", "fat_g", "fiber_g"]
+AnalyticsSource = Literal["vision_label", "text_estimate", "manual", "barcode"]
+
+
+class AnalyticsQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    days: int | None = Field(default=None, ge=1, le=366)
+    start: date | None = None
+    end: date | None = None
+    metric: AnalyticsMetric = "calories"
+    source_types: list[AnalyticsSource] = Field(default_factory=list, max_length=4)
+    food_query: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "AnalyticsQuery":
+        custom = self.start is not None or self.end is not None
+        if self.days is not None and custom:
+            raise ValueError("use days or custom dates, not both")
+        if (self.start is None) != (self.end is None):
+            raise ValueError("start and end must be supplied together")
+        if self.days is None and not custom:
+            raise ValueError("an analytics range is required")
+        if self.start is not None and self.end is not None:
+            if self.end < self.start:
+                raise ValueError("end must not precede start")
+            if (self.end - self.start).days + 1 > 366:
+                raise ValueError("range must not exceed 366 days")
+        if len(set(self.source_types)) != len(self.source_types):
+            raise ValueError("source_types must be unique")
+        return self
+
+
+class AnalyticsNavigationBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    type: Literal["analytics_navigation"]
+    label: str = Field(min_length=1, max_length=80)
+    description: str = Field(min_length=1, max_length=240)
+    query: AnalyticsQuery
+
+
+class EvidenceInsightBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    type: Literal["evidence_insight"]
+    title: str = Field(min_length=1, max_length=100)
+    interpretation: str = Field(min_length=1, max_length=600)
+    tone: Literal["neutral", "positive", "warning"] = "neutral"
+
+
+AssistantBlock = Annotated[
+    MealProposalBlock | GoalDraftBlock | AnalyticsNavigationBlock | EvidenceInsightBlock,
+    Field(discriminator="type"),
+]
+
+
+class AssistantHarnessResponse(BaseModel):
+    """Versioned, allowlisted UI output from the assistant harness."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    schema_version: Literal["1"] = "1"
+    assistant_message: str = Field(min_length=1, max_length=1200)
+    blocks: list[AssistantBlock] = Field(default_factory=list, max_length=6)
+
+    @model_validator(mode="after")
+    def limit_mutation_drafts(self) -> "AssistantHarnessResponse":
+        types = [block.type for block in self.blocks]
+        if types.count("meal_proposal") > 1 or types.count("goal_draft") > 1:
+            raise ValueError("at most one meal proposal and one goal draft are allowed")
+        return self
+
+
+class LogProposalResponse(BaseModel):
+    """Legacy meal-only response retained for compatibility tests/imports."""
 
     assistant_message: str = Field(description="Conversational, empathetic yet concise response")
     proposed_items: list[FoodItemProposal] = Field(default_factory=list)
-    requires_user_confirmation: bool = True
+    requires_user_confirmation: Literal[True] = True

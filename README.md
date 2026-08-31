@@ -55,6 +55,9 @@ recompute instantly, then confirm.
 - **Filterable statistics.** Explore custom date ranges, input sources, foods,
   nutrient trends, weekday patterns, macro share, and top contributors without
   exporting sensitive meal data to another service.
+- **AI as a constrained harness.** The coach can turn trusted context into meal
+  drafts, goal reviews, evidence callouts, and filtered Stats actions. Models
+  never choose endpoints or write meals/goals without explicit confirmation.
 - **Desktop-grade UI.** A horizontal control deck, full-width work area, and
   two-column layouts on wide screens; the same installable PWA stays
   pocket-first with bottom navigation on phones.

@@ -81,10 +81,6 @@ def test_proposal_weight_is_persistence_ready():
     proposal = FoodItemProposal(
         name="Oats",
         estimated_weight_g=12.345,
-        calories=1,
-        protein_g=1,
-        carbs_g=1,
-        fat_g=1,
         confidence="high",
         reasoning="weighed",
         per100=Per100Values(calories=100, protein_g=1, carbs_g=1, fat_g=1),
