@@ -111,7 +111,7 @@ plate-os/
     ├── Caddyfile              ← static SPA + /api proxy (flush_interval -1)
     ├── Dockerfile             ← node build → caddy
     └── src/
-        ├── App.tsx            ← tab shell, login gate, offline banner
+        ├── App.tsx            ← responsive tab shell, login gate, offline banner
         ├── lib/
         │   ├── nutrition.ts   ← client mirror of backend math (KEEP IN SYNC)
         │   ├── api.ts         ← fetch wrapper (ApiError with status)
@@ -121,7 +121,8 @@ plate-os/
         │   └── offline/db.ts  ← Dexie pending-queue + flush
         └── components/        ├── ui/ (Button, Card) · TargetBars · MealList
                                 · ProposalCard · ScanSheet (lazy) · Assistant
-                                · Analytics (lazy, Recharts) · ManualEntry · BottomNav
+                                · Analytics (lazy, Recharts) · ManualEntry
+                                · DesktopHeader (md+) · BottomNav (mobile only)
 ```
 
 ## 5. API surface (all under `/api`)
@@ -134,7 +135,7 @@ plate-os/
 | `GET/POST /food-items`, `GET /food-items/barcode/{code}` | library + OFF cache-aside |
 | `GET/POST /meal-logs`, `PATCH/DELETE /meal-logs/{id}` | CRUD; server-computed totals; optional replay-safe mutation UUID |
 | `GET /daily-summary?day=` | tz-local targets/consumed/remaining |
-| `GET /analytics/daily?days=` | tz-aware grouped per-day history + 7-day rolling avg (D20) |
+| `GET /analytics/daily` | tz-aware ranges + source/food filters, summaries, history, source mix, top foods (D20/D38) |
 | `POST /vision/parse-label` | LLM extraction → normalized per-100g; **stateless, never writes** |
 | `GET/PUT /settings`, `POST /settings/test` | UI-managed provider config; keys write-only; cookie-session-only |
 | `POST /chat/stream` | SSE: `delta` → `proposal` → `done` (or `error`); persists chat only |
@@ -145,6 +146,7 @@ Conventions: DTOs in `app/schemas/api.py`; the single profile row is resolved by
 ## 6. LLM integration rules
 
 - Two tasks route independently (`get_llm("text")` / `get_llm("vision")`): resolution is Settings-screen override → inheritance (vision from text) → env default (`PLATEOS_LLM_BASE_URL/_API_KEY/_MODEL`). Never import provider-specific SDKs beyond the OpenAI one.
+- Settings presets include OpenAI, Gemini, Ollama, and DeepSeek. DeepSeek text uses `deepseek-v4-flash`; official hosted vision uses the experimental `deepseek-v4-flash-vision-exp` and must be configured as a separate vision provider rather than inheriting the text model.
 - Runtime provider config lives in `PLATEOS_RUNTIME_SETTINGS_FILE` (JSON, outside the DB/backups). API keys are write-only over the API; Settings mutations are cookie-session-only — the bearer token cannot reach them. After a restore drill, re-enter provider config (D35).
 - New LLM tasks = new Pydantic contract in `schemas/llm_contracts.py` + call via `LLMService.extract_json()` (JSON mode → validate → one corrective retry).
 - The chat system prompt gets fresh context injected per turn (`build_context` in `routes/chat.py`): local datetime, today's consumed/remaining, last-3-days trend. Extend there, not by hand-editing prompts elsewhere.
@@ -167,7 +169,7 @@ cp ../.env.example .env   # adjust
 
 **Full stack:** production-shaped Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin (local default `http://127.0.0.1:8080`). API runs migrations on boot. Never reuse development credentials in this flow.
 
-**Verification expectations:** 71 pytest tests (nutrition math, validation, integrity, LLM, auth, accounts, production settings, request limits, readiness, runtime settings); 8 Vitest tests for mirrored math and the offline queue; `tsc --noEmit` clean; OpenAPI lists 20 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The hardened local Docker/PostgreSQL smoke, synthetic backup, and isolated restore drill passed 2026-08-25 (see D29-D33); production evidence is separate.
+**Verification expectations:** 81 pytest tests (nutrition math, validation, integrity, analytics, LLM, auth, accounts, production settings, request limits, readiness, runtime settings, recovery guards); 13 Vitest tests for mirrored math, analytics helpers, and the offline queue; `tsc --noEmit` clean; OpenAPI lists 20 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The hardened local Docker/PostgreSQL smoke, synthetic backup, and isolated restore drill passed 2026-08-25 (see D29-D33); production evidence is separate.
 
 ## 8. Conventions & gotchas
 
@@ -185,7 +187,7 @@ cp ../.env.example .env   # adjust
 - **Containers:** base images use multi-platform index digests, Python production installs `requirements.lock`, frontend uses `npm ci --ignore-scripts`, and runtimes are non-root/read-only with bounded logs. Update pins and lockfiles intentionally together.
 - **Recovery:** never archive live `pgdata`. Use the opt-in encrypted `pg_dump` job and the separate restore project. The backup refuses an uninitialized/unsupported DB or invalid single-profile state and publishes ciphertext only after its checksum sidecar. Restore emptiness inspection relies on PostgreSQL's normal-object OID boundary and must be revalidated with a database major-version pin change. A synthetic local drill passes, but tooling/local evidence is not a production backup; do not say "backed up" until monitored production backups, independent retention, and an isolated application restore are verified.
 
-## 9. Roadmap status (as of 2026-08-25)
+## 9. Roadmap status (as of 2026-08-31)
 
 - [x] Phase 1 — scaffold, data layer, CRUD, auth, docker-compose
 - [x] Phase 2 — barcode + label pipelines, vision endpoint, downscaler *(live OFF lookup verified)*
@@ -198,8 +200,10 @@ cp ../.env.example .env   # adjust
 - [x] Synthetic encrypted backup and isolated application restore drill, including checksum, restored reads, source-count comparison, and non-empty-target refusal (2026-08-25)
 - [x] Dual-provider LLM routing + Settings screen: per-task providers, write-only keys, cookie-only mutations, runtime file outside DB/backups (2026-08-25)
 - [x] Multi-user household accounts: scrypt credentials, admin management, local password reset, admin-gated provider settings, desktop navigation layout (D36, 2026-08-26)
+- [x] Desktop navigation redesign: horizontal control deck, mobile-only bottom navigation, natural document scrolling (D37, 2026-08-31)
+- [x] Filterable analytics workspace: custom ranges, source/food filters, nutrient and weekday trends, source mix, top foods (D38, 2026-08-31)
 - [ ] Production recovery operations: choose destination, schedule, retention, RPO/RTO, monitoring, and execute an authorized restore drill from a production backup
-- [ ] Real LLM round-trips (point `PLATEOS_LLM_BASE_URL` at OpenAI/Gemini/Ollama and exercise vision + chat)
+- [ ] Real LLM round-trips (point `PLATEOS_LLM_BASE_URL` at OpenAI/Gemini/DeepSeek/Ollama and exercise vision + chat)
 - [ ] iOS device testing: camera in standalone PWA, install/offline behavior, safe areas
 - [ ] Homelab deployment behind TLS proxy (production Compose already forces Secure cookies; target port/route/Access remain unverified)
 - [ ] Optional later: effective-dated target history, food search-as-you-type in Quick Log

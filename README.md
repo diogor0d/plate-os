@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="frontend/public/logo.svg" width="88" alt="PlateOS logo" />
+<img src="docs/design/plate-prompt-readme.svg" width="88" alt="PlateOS Plate Prompt logo" />
 
 # PlateOS
 
@@ -19,6 +19,11 @@ Nothing is logged until you confirm it.
 
 PlateOS is a mobile-first **and** desktop PWA for daily nutrition tracking and
 body recomposition. Three fast input paths remove the friction:
+
+The **Plate Prompt** mark combines a shallow dish with a command prompt: meals
+go in, structured and reviewable nutrition data comes out. It reflects the
+product's core idea — nutrition tracking treated as a dependable personal
+system rather than a stream of guesses.
 
 | | Input path | How it works |
 |---|---|---|
@@ -47,8 +52,12 @@ recompute instantly, then confirm.
   email infrastructure, no recovery links, nothing leaves your host.
 - **Timezone-correct days.** Daily budgets group by *your* local midnight
   (IANA tz), never UTC.
-- **Desktop-grade UI.** A navigation rail and two-column layouts on wide
-  screens; the same installable PWA stays pocket-first on phones.
+- **Filterable statistics.** Explore custom date ranges, input sources, foods,
+  nutrient trends, weekday patterns, macro share, and top contributors without
+  exporting sensitive meal data to another service.
+- **Desktop-grade UI.** A horizontal control deck, full-width work area, and
+  two-column layouts on wide screens; the same installable PWA stays
+  pocket-first with bottom navigation on phones.
 
 ## Architecture
 
@@ -67,8 +76,8 @@ recompute instantly, then confirm.
 │ OFF lookup+cache · scrypt accounts · SSE chat      │
 └──────┬─────────────────────────┬───────────────────┘
 ┌──────▼──────────┐   ┌──────────▼───────────────────┐
-│ db — PostgreSQL │   │ LLM: OpenAI / Gemini-compat /│
-│ 17 (plain)      │   │ Ollama — swapped in Settings │
+│ db — PostgreSQL │   │ LLM: OpenAI / Gemini /       │
+│ 17 (plain)      │   │ DeepSeek / Ollama via Settings│
 └─────────────────┘   └──────────────────────────────┘
 ```
 

@@ -46,6 +46,13 @@ const PRESETS: Preset[] = [
     textModel: "qwen2.5:7b",
     visionModel: "qwen2.5vl:7b",
   },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    baseUrl: "https://api.deepseek.com",
+    textModel: "deepseek-v4-flash",
+    visionModel: "deepseek-v4-flash-vision-exp",
+  },
 ];
 
 const eyebrow = "text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500";
@@ -152,6 +159,11 @@ function ProviderFields(props: {
             </button>
           ))}
         </div>
+        {vision && matchedPreset?.id === "deepseek" && (
+          <p className="mt-2 text-[11px] leading-relaxed text-amber-400/80">
+            DeepSeek vision is experimental. Label images are sent to DeepSeek's hosted API.
+          </p>
+        )}
       </div>
       <label className="block space-y-1">
         <span className={eyebrow}>Endpoint</span>
@@ -187,19 +199,26 @@ function KeyRow(props: {
   onClearToggle: () => void;
 }) {
   const { hasStoredKey, typed, clearing, onType, onClearToggle } = props;
-  if (!hasStoredKey && !typed && !clearing) return null;
   return (
-    <div className="space-y-1">
-      <span className={eyebrow}>API key {hasStoredKey && !typed && !clearing ? "(saved)" : ""}</span>
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className={eyebrow}>API key {hasStoredKey && !typed && !clearing ? "(saved)" : ""}</span>
+        <span className="text-[10px] text-zinc-600">Write-only · never displayed again</span>
+      </div>
       {!clearing && (
         <input
           type="password"
           className={field}
-          placeholder={hasStoredKey ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 saved \u2014 type to replace" : "sk-\u2026"}
+          placeholder={hasStoredKey ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 saved \u2014 type to replace" : "Enter this provider's API key"}
           value={typed}
           onChange={(e) => onType(e.target.value)}
           autoComplete="new-password"
         />
+      )}
+      {!hasStoredKey && !typed && !clearing && (
+        <p className="text-[11px] text-zinc-600">
+          Required for hosted providers unless a fallback key is already configured on the server. Local Ollama usually needs no key.
+        </p>
       )}
       {hasStoredKey && (
         <button
@@ -282,6 +301,11 @@ export function SettingsView() {
           onModel={(v) => patch({ textModel: v })}
           vision={false}
         />
+        {f.textBaseUrl.trim() === "https://api.deepseek.com" && f.visionInherit && (
+          <p className="rounded-lg border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-[11px] leading-relaxed text-amber-300/90">
+            DeepSeek's text model cannot read images. Enable a separate label-scanning provider and select DeepSeek's experimental vision model or another vision provider.
+          </p>
+        )}
         <KeyRow
           hasStoredKey={data.text.has_api_key}
           typed={f.textKey}

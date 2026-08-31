@@ -15,7 +15,7 @@ import { MealList } from "./components/MealList";
 import { Assistant } from "./components/Assistant";
 import { ManualEntry } from "./components/ManualEntry";
 import { BottomNav, type Tab } from "./components/BottomNav";
-import { SideNav } from "./components/SideNav";
+import { DesktopHeader } from "./components/DesktopHeader";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 
@@ -83,6 +83,14 @@ const PAGE_TITLES: Record<Tab, string> = {
   coach: "Coach",
   stats: "Stats",
   settings: "Settings",
+};
+
+const PAGE_DESCRIPTIONS: Record<Tab, string> = {
+  today: "Your intake, targets, and confirmed meals for the day.",
+  scan: "Capture a barcode or nutrition label and review before logging.",
+  coach: "Describe a meal naturally, then verify the coach's proposal.",
+  stats: "Review recent intake patterns against your current targets.",
+  settings: "Manage your account, household, and connected providers.",
 };
 
 const TEXT_EYEBROW = "text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500";
@@ -177,10 +185,17 @@ export default function App() {
     ) : null;
 
   return (
-    <div className="flex min-h-full flex-col md:h-screen md:flex-row md:overflow-hidden">
-      <SideNav tab={tab} onTab={setTab} me={me.data} onLogout={() => logout.mutate()} />
+    <div className="min-h-full bg-zinc-950">
+      <DesktopHeader
+        tab={tab}
+        onTab={setTab}
+        me={me.data}
+        onLogout={() => logout.mutate()}
+        summary={summary.data}
+        status={statusLine}
+      />
 
-      <div className="flex min-h-full flex-1 flex-col px-4 pb-24 pt-safe md:mx-auto md:max-w-5xl md:px-10 md:pb-10 md:pt-8">
+      <div className="mx-auto flex min-h-full max-w-7xl flex-col px-4 pb-24 pt-[env(safe-area-inset-top)] md:min-h-[calc(100vh-76px)] md:px-6 md:pb-12 md:pt-9 lg:px-10">
         {/* Mobile header */}
         <header className="space-y-3 py-4 md:hidden">
           <div className="flex items-center justify-between">
@@ -191,9 +206,15 @@ export default function App() {
         </header>
 
         {/* Desktop page heading */}
-        <div className="hidden items-baseline justify-between pb-6 pt-2 md:flex">
-          <h1 className="text-xl font-semibold tracking-tight">{PAGE_TITLES[tab]}</h1>
-          {statusLine}
+        <div className="hidden justify-between border-b border-zinc-800/70 pb-6 md:flex">
+          <div>
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-emerald-500/80">
+              Workspace
+            </p>
+            <h1 className="text-2xl font-semibold tracking-[-0.025em] text-zinc-100">{PAGE_TITLES[tab]}</h1>
+            <p className="mt-1 text-sm text-zinc-500">{PAGE_DESCRIPTIONS[tab]}</p>
+          </div>
+          <div className="pt-2 xl:hidden">{statusLine}</div>
         </div>
 
         {failedQueue.length > 0 && (
@@ -215,9 +236,9 @@ export default function App() {
           </Card>
         )}
 
-        <main className="flex-1 space-y-4">
+        <main className="flex-1 space-y-4 md:pt-7">
           {tab === "today" && (
-            <section className="space-y-2 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8 lg:space-y-0">
+            <section className="space-y-2 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-10 lg:space-y-0">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-medium text-zinc-400 md:hidden lg:block">Today's logs</h2>
@@ -237,7 +258,7 @@ export default function App() {
                 )}
                 <MealList logs={logs.data} onDelete={(id) => void deleteLog(id)} />
               </div>
-              <Card className="hidden space-y-3 lg:sticky lg:top-8 lg:block">
+              <Card className="hidden space-y-3 lg:sticky lg:top-[105px] lg:block">
                 <h3 className={TEXT_EYEBROW}>Budget</h3>
                 <TargetBars summary={summary.data} />
               </Card>

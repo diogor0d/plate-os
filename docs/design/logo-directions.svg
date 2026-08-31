@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-label="Three PlateOS logo directions">
+  <rect width="960" height="360" rx="24" fill="#09090b"/>
+  <style>
+    .cell { fill:#111113; stroke:#27272a; stroke-width:2 }
+    .mark { fill:none; stroke:#e4e4e7; stroke-width:10; stroke-linecap:round; stroke-linejoin:round }
+    .accent { fill:none; stroke:#34d399; stroke-width:10; stroke-linecap:round; stroke-linejoin:round }
+    .title { fill:#fafafa; font:600 20px ui-sans-serif,system-ui,sans-serif }
+    .copy { fill:#71717a; font:13px ui-sans-serif,system-ui,sans-serif }
+    .code { fill:#34d399; font:600 12px ui-monospace,monospace; letter-spacing:2px }
+  </style>
+  <g transform="translate(24 24)">
+    <rect class="cell" width="288" height="312" rx="18"/>
+    <text class="code" x="24" y="34">A / TRACKING</text>
+    <g transform="translate(80 65)">
+      <path class="mark" d="M24 75a56 56 0 1 1 89 45"/>
+      <path class="mark" d="M39 75a41 41 0 1 1 63 35" opacity=".45"/>
+      <path class="accent" d="M113 120a56 56 0 0 1-22 10"/>
+      <path d="M96 113l11 12 5-18" fill="#34d399"/>
+    </g>
+    <text class="title" x="24" y="239">Calibrated dish</text>
+    <text class="copy" x="24" y="267">Measured, quiet, highly legible.</text>
+    <text class="copy" x="24" y="288">The notch is today's target.</text>
+  </g>
+  <g transform="translate(336 24)">
+    <rect class="cell" width="288" height="312" rx="18"/>
+    <text class="code" x="24" y="34">B / MONOGRAM</text>
+    <g transform="translate(86 66)">
+      <path class="mark" d="M24 135V24h47a47 47 0 0 1 0 94H24"/>
+      <circle cx="71" cy="71" r="27" fill="#18181b" stroke="#e4e4e7" stroke-width="7"/>
+      <path d="M71 44a27 27 0 0 1 27 27H71z" fill="#34d399"/>
+    </g>
+    <text class="title" x="24" y="239">Portion P</text>
+    <text class="copy" x="24" y="267">Ownable, compact, wordmark-ready.</text>
+    <text class="copy" x="24" y="288">The counter becomes the plate.</text>
+  </g>
+  <g transform="translate(648 24)">
+    <rect class="cell" width="288" height="312" rx="18"/>
+    <text class="code" x="24" y="34">C / SYSTEM</text>
+    <g transform="translate(72 73)">
+      <path class="mark" d="M16 54c8 48 35 72 64 72s56-24 64-72H16z"/>
+      <path class="mark" d="M28 40h104" opacity=".45"/>
+      <path class="accent" d="M50 68l18 15-18 15M80 99h27"/>
+    </g>
+    <text class="title" x="24" y="239">Plate prompt</text>
+    <text class="copy" x="24" y="267">Technical, distinctive, less literal.</text>
+    <text class="copy" x="24" y="288">A meal becomes a command.</text>
+  </g>
+</svg>

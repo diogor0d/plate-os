@@ -66,37 +66,85 @@ export function ManualEntry({ onDone }: { onDone: () => void }) {
   }
 
   const field =
-    "w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm";
+    "w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none";
+
+  const nutrientField = (
+    label: string,
+    value: string,
+    onChange: (value: string) => void,
+    unit: string,
+    required = false,
+  ) => (
+    <label className="block space-y-1.5">
+      <span className="text-xs font-medium text-zinc-300">
+        {label}{required && <span className="ml-1 text-emerald-400">required</span>}
+      </span>
+      <div className="relative">
+        <input
+          className={`${field} pr-12 tabular-nums`}
+          inputMode="decimal"
+          aria-label={`${label} per 100 grams or milliliters`}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-zinc-600">{unit}</span>
+      </div>
+    </label>
+  );
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold">Quick log</h2>
+        <div>
+          <h2 className="text-base font-semibold">Quick log</h2>
+          <p className="mt-1 text-xs text-zinc-500">Enter the nutrition label, then tell us how much you consumed.</p>
+        </div>
         <Button variant="ghost" size="sm" onClick={onDone}>
           Close
         </Button>
       </div>
-      <p className="text-xs text-zinc-500">Values are per 100 g/ml as printed on the label.</p>
-      <input
-        className={field}
-        placeholder="Food name"
-        maxLength={255}
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
-      <div className="grid grid-cols-3 gap-2">
-        <input className={field} inputMode="decimal" placeholder="kcal*" value={calories} onChange={(e) => setCalories(e.target.value)} />
-        <input className={field} inputMode="decimal" placeholder="P (g)" value={protein} onChange={(e) => setProtein(e.target.value)} />
-        <input className={field} inputMode="decimal" placeholder="C (g)" value={carbs} onChange={(e) => setCarbs(e.target.value)} />
+
+      <label className="block space-y-1.5">
+        <span className="text-xs font-medium text-zinc-300">Food name <span className="ml-1 text-emerald-400">required</span></span>
+        <input
+          className={field}
+          placeholder="e.g. Greek yogurt"
+          maxLength={255}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </label>
+
+      <fieldset className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
+        <legend className="px-1 text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500">Nutrition per 100 g/ml</legend>
+        <p className="text-xs text-zinc-600">Copy these values directly from the product label.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {nutrientField("Calories", calories, setCalories, "kcal", true)}
+          {nutrientField("Protein", protein, setProtein, "g")}
+          {nutrientField("Carbohydrates", carbs, setCarbs, "g")}
+          {nutrientField("Fat", fat, setFat, "g")}
+          {nutrientField("Fiber", fiber, setFiber, "g")}
+        </div>
+      </fieldset>
+
+      <div className="grid items-end gap-3 border-t border-zinc-800 pt-4 sm:grid-cols-[1fr_auto]">
+        <label className="block space-y-1.5">
+          <span className="text-xs font-medium text-zinc-300">Amount consumed <span className="ml-1 text-emerald-400">required</span></span>
+          <div className="relative">
+            <input
+              className={`${field} pr-10 tabular-nums`}
+              inputMode="decimal"
+              aria-label="Amount consumed in grams or milliliters"
+              value={quantity}
+              onChange={(event) => setQuantity(event.target.value)}
+            />
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-zinc-600">g/ml</span>
+          </div>
+        </label>
+        <Button className="sm:min-w-32" onClick={submit} disabled={!name.trim() || !calories}>
+          Review totals
+        </Button>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        <input className={field} inputMode="decimal" placeholder="F (g)" value={fat} onChange={(e) => setFat(e.target.value)} />
-        <input className={field} inputMode="decimal" placeholder="Fiber (g)" value={fiber} onChange={(e) => setFiber(e.target.value)} />
-        <input className={field} inputMode="decimal" placeholder="Qty (g)*" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-      </div>
-      <Button className="w-full" onClick={submit} disabled={!name.trim() || !calories}>
-        Review
-      </Button>
       {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
   );

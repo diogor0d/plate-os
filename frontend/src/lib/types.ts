@@ -113,6 +113,7 @@ export interface RuntimeSettingsInput {
 
 export interface DayTotals {
   date: string;
+  meal_count: number;
   calories: number;
   protein_g: number;
   carbs_g: number;
@@ -120,10 +121,47 @@ export interface DayTotals {
   fiber_g: number;
 }
 
+export interface AnalyticsTargets {
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+}
+
+export interface AnalyticsSummary {
+  meal_count: number;
+  active_days: number;
+  calendar_days: number;
+  avg_meals_per_active_day: number;
+  avg_calories_per_day: number;
+  avg_calories_per_active_day: number;
+  avg_protein_g_per_day: number;
+  avg_fiber_g_per_day: number;
+}
+
+export interface AnalyticsSourceBreakdown {
+  source_type: string;
+  meal_count: number;
+  calories: number;
+}
+
+export interface AnalyticsFoodBreakdown {
+  name: string;
+  meal_count: number;
+  quantity_g: number;
+  calories: number;
+  protein_g: number;
+}
+
 export interface AnalyticsResponse {
   timezone: string;
+  start_date: string;
+  end_date: string;
   days: number;
-  targets: Record<string, number>;
+  targets: AnalyticsTargets;
+  summary: AnalyticsSummary;
   history: DayTotals[];
+  source_breakdown: AnalyticsSourceBreakdown[];
+  top_foods: AnalyticsFoodBreakdown[];
   rolling_avg_calories_7d: number;
 }

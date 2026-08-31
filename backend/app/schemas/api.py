@@ -1,7 +1,7 @@
 """API request/response DTOs."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -213,6 +213,7 @@ class DailySummary(BaseModel):
 
 class DayTotals(BaseModel):
     date: str
+    meal_count: int = 0
     calories: float
     protein_g: float
     carbs_g: float
@@ -220,11 +221,48 @@ class DayTotals(BaseModel):
     fiber_g: float
 
 
+class AnalyticsTargets(BaseModel):
+    calories: int
+    protein_g: int
+    carbs_g: int
+    fat_g: int
+
+
+class AnalyticsSummary(BaseModel):
+    meal_count: int
+    active_days: int
+    calendar_days: int
+    avg_meals_per_active_day: float
+    avg_calories_per_day: float
+    avg_calories_per_active_day: float
+    avg_protein_g_per_day: float
+    avg_fiber_g_per_day: float
+
+
+class AnalyticsSourceBreakdown(BaseModel):
+    source_type: str
+    meal_count: int
+    calories: float
+
+
+class AnalyticsFoodBreakdown(BaseModel):
+    name: str
+    meal_count: int
+    quantity_g: float
+    calories: float
+    protein_g: float
+
+
 class AnalyticsResponse(BaseModel):
     timezone: str
+    start_date: date
+    end_date: date
     days: int
-    targets: dict[str, int]
+    targets: AnalyticsTargets
+    summary: AnalyticsSummary
     history: list[DayTotals]
+    source_breakdown: list[AnalyticsSourceBreakdown]
+    top_foods: list[AnalyticsFoodBreakdown]
     rolling_avg_calories_7d: float
 
 
