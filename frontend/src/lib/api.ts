@@ -18,10 +18,11 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     if (res.status === 401) throw new ApiError(401, "Not authenticated");
-    let detail: string = res.statusText;
+    let detail = res.statusText.trim() || `Request failed with HTTP ${res.status}`;
     try {
       const body = (await res.json()) as { detail?: unknown };
-      if (body.detail) detail = String(body.detail);
+      const responseDetail = body.detail === undefined ? "" : String(body.detail).trim();
+      if (responseDetail) detail = responseDetail;
     } catch {
       /* non-JSON error body */
     }

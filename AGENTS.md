@@ -183,7 +183,7 @@ cp ../.env.example .env   # adjust
 
 **Production stack:** hardened Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin. API runs migrations on boot. Never reuse development credentials in this flow. Production runs commit `dbf9d39` without the optional push profile; it supersedes the initial content-addressed D41 artifact recorded by D42.
 
-**Verification expectations:** 188 pytest tests and 43 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 30 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The review database upgraded through `0005` and the local stack/build passed 2026-09-02. Production also upgraded `0003 → 0005`, reached healthy readiness, and passed authenticated read-only API checks on 2026-09-02 (D42). Real push delivery, authenticated edge access, production restore, and iOS evidence remain separate.
+**Verification expectations:** 188 pytest tests and 44 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 30 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The review database upgraded through `0005` and the local stack/build passed 2026-09-02. Production also upgraded `0003 → 0005`, reached healthy readiness, and passed authenticated read-only API checks on 2026-09-02 (D42). The `dbf9d39` mobile shell and standalone viewport passed physical iPhone testing on 2026-09-03 (D46); real push delivery, authenticated edge access, production restore, and remaining iOS camera/offline behavior remain separate.
 
 ## 8. Conventions & gotchas
 
@@ -203,7 +203,7 @@ cp ../.env.example .env   # adjust
 - **Containers:** base images use multi-platform index digests, Python production installs `requirements.lock`, frontend uses `npm ci --ignore-scripts`, and runtimes are non-root/read-only with bounded logs. Update pins and lockfiles intentionally together.
 - **Recovery:** never archive live `pgdata`. Use the opt-in encrypted `pg_dump` job and the separate restore project. The backup refuses an uninitialized/unsupported DB or invalid single-profile state and publishes ciphertext only after its checksum sidecar. Restore emptiness inspection relies on PostgreSQL's normal-object OID boundary and must be revalidated with a database major-version pin change. A synthetic local drill passes, but tooling/local evidence is not a production backup; do not say "backed up" until monitored production backups, independent retention, and an isolated application restore are verified.
 
-## 9. Roadmap status (as of 2026-09-02)
+## 9. Roadmap status (as of 2026-09-03)
 
 - [x] Phase 1 — scaffold, data layer, CRUD, auth, docker-compose
 - [x] Phase 2 — barcode + label pipelines, vision endpoint, downscaler *(live OFF lookup verified)*
@@ -226,6 +226,7 @@ cp ../.env.example .env   # adjust
 - [x] Constrained AI meal-plan drafts with explicit routine/schedule confirmation (D41, 2026-09-02)
 - [x] Transport-neutral notification outbox and isolated opt-in Web Push worker with generic payloads (D41, 2026-09-02)
 - [x] Homelab production deployment: commit `dbf9d39`, `0003 → 0005`, loopback origin, TLS/Access challenge, and pre/post encrypted backup checksums (D42, 2026-09-02)
+- [x] Physical iPhone PWA shell verification: stable bottom navigation and full standalone viewport without phantom browser-toolbar space (D44-D46, 2026-09-03)
 - [ ] Production recovery operations: choose destination, schedule, retention, RPO/RTO, monitoring, and execute an authorized restore drill from a production backup
 - [ ] Real LLM round-trips (point `PLATEOS_LLM_BASE_URL` at OpenAI/Gemini/DeepSeek/Ollama and exercise vision + chat)
 - [ ] iOS device testing: camera in standalone PWA, install/offline behavior, safe areas

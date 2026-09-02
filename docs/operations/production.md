@@ -30,10 +30,13 @@
   recoverability claim: decryptability, independent retention, scheduling,
   monitoring, and an isolated restore from a production archive remain
   `UNVERIFIED`.
+- `VERIFIED` on 2026-09-03: operator testing on a physical iPhone running the
+  identified `dbf9d39` PWA confirmed stable bottom navigation and full standalone
+  viewport coverage without the former toolbar-sized blank region.
 - `UNVERIFIED`: authenticated end-to-end edge access, denied origin-bypass paths,
   firewall behavior, monitoring, backup schedule/retention, RPO/RTO, production
-  restore, real Web Push delivery, and physical iOS behavior. The optional push
-  worker remains disabled pending separately managed key material.
+  restore, real Web Push delivery, and remaining iOS camera/offline behavior. The
+  optional push worker remains disabled pending separately managed key material.
 - Before choosing `PLATEOS_PORT`, perform an authorized current-listener check
   on the target host and record the binding in an exposure matrix; never assume
   a documented or previously seen port is still free.

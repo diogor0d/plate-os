@@ -26,3 +26,11 @@ viewport. The bottom safe-area inset remains unchanged.
 - Navigation still remains a normal-flow shell row and cannot move with page
   height.
 - The legitimate home-indicator clearance remains inside the navigation row.
+
+## Verification
+
+`VERIFIED` on 2026-09-03T00:03:04+01:00 from operator testing on a physical
+iPhone: the installed PWA showed release badge `dbf9d39`, the bottom navigation
+remained stationary across tabs, and the toolbar-sized blank region was gone.
+This verifies the mobile shell and standalone viewport correction, not camera,
+offline replay, or other pending iOS flows.

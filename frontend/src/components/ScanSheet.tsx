@@ -138,7 +138,10 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       setStatus(null);
     } catch (err) {
       setStatus(null);
-      setError(`Label scanning unavailable: ${err instanceof Error ? err.message : String(err)}`);
+      const detail = (err instanceof Error ? err.message : String(err)).trim();
+      setError(
+        `Label scanning unavailable: ${detail || "The photo could not be processed. Try another image or test the label scanning provider in Settings."}`,
+      );
     }
   };
 
