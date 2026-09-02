@@ -2,10 +2,11 @@
 
 ## Status and evidence boundary
 
-- Runtime state: `VERIFIED` on 2026-09-02 at the approved homelab target. The
-  content-addressed D41 release `d41-5bccac401913` runs as healthy `db`, `api`,
-  and `web` services with a loopback-only origin; schema migration `0003` to
-  `0005` completed successfully.
+- Runtime state: `VERIFIED` on 2026-09-02 at the approved homelab target. Public
+  repository commit `ff0526d` runs as healthy `db`, `api`, and `web` services
+  with a loopback-only origin; schema migration `0003` to `0005` completed
+  successfully. It supersedes the initial content-addressed D41 deployment
+  recorded by D42.
 - Intended target: the operator's approved Ubuntu Docker host. Hostnames,
   addresses, and tunnel specifics live in the operator's private homelab
   inventory, deliberately outside this public repository.
