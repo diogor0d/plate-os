@@ -2,9 +2,11 @@
 using a stubbed OpenAI-compatible client (no network)."""
 
 import pytest
+from httpx import Request, Response
+from openai import AuthenticationError, NotFoundError, RateLimitError
 
 from app.schemas.llm_contracts import NutritionLabelExtraction, Per100Values
-from app.services.llm import LLMError, LLMService
+from app.services.llm import LLMError, LLMService, describe_llm_error
 
 VALID_EXTRACTION = """
 {"product_name": "Oats", "basis": "per_100g", "serving_size_g": null,
@@ -84,3 +86,33 @@ async def test_schema_preamble_forbids_arithmetic():
     user_content = call["messages"][1]["content"]
     assert isinstance(user_content, list)  # multimodal blocks
     assert user_content[0]["image_url"]["url"].startswith("data:image/webp")
+
+
+@pytest.mark.parametrize(
+    ("exception_type", "expected_status", "expected_text"),
+    [
+        (AuthenticationError, 502, "rejected its credentials"),
+        (NotFoundError, 502, "'retired-model' was not found"),
+        (RateLimitError, 429, "rate limited"),
+    ],
+)
+def test_provider_errors_are_actionable_without_raw_upstream_details(
+    exception_type, expected_status, expected_text
+):
+    response = Response(404, request=Request("POST", "https://provider.invalid/chat"))
+    exc = exception_type(
+        "raw upstream detail that should not be exposed",
+        response=response,
+        body={"error": {"message": "provider internals"}},
+    )
+
+    status, detail = describe_llm_error(
+        exc,
+        task_label="Label scanning",
+        model="retired-model",
+    )
+
+    assert status == expected_status
+    assert expected_text in detail
+    assert "raw upstream" not in detail
+    assert "provider internals" not in detail

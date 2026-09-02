@@ -12,6 +12,7 @@ from app.models import FoodItem, FoodItemMutation, UserProfile
 from app.schemas.api import VisionParseRequest
 from app.schemas.llm_contracts import NutritionLabelExtraction, Per100Values
 from app.schemas.products import ProductArchive, ProductCreate, ProductUpdate
+from app.services.llm import LLMError
 from app.services.product_candidates import (
     CandidateProofError,
     issue_candidate_proof,
@@ -253,6 +254,8 @@ def test_candidate_proof_rejects_tampering_expiry_and_source_mismatch():
 
 
 class FakeLLM:
+    model = "test-vision-model"
+
     async def extract_json(self, **_kwargs):
         return NutritionLabelExtraction(
             product_name=None,
@@ -279,3 +282,21 @@ async def test_vision_is_stateless_candidate_and_only_echoes_scanner_barcode(mon
     assert result.name == "Barcode scanner-code"
     assert result.issues == ["missing_name", "missing_protein", "missing_fiber"]
     assert result.acceptance_proof
+
+
+class FailingLLM:
+    model = "retired-model"
+
+    async def extract_json(self, **_kwargs):
+        raise LLMError("invalid provider output")
+
+
+@pytest.mark.asyncio
+async def test_vision_returns_actionable_provider_failure(monkeypatch):
+    monkeypatch.setattr(vision, "get_llm", lambda _task: FailingLLM())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await vision.parse_label(VisionParseRequest(image_base64="abc"), None, profile())
+
+    assert exc_info.value.status_code == 502
+    assert "could not validate" in exc_info.value.detail

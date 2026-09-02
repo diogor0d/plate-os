@@ -138,7 +138,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       setStatus(null);
     } catch (err) {
       setStatus(null);
-      setError(`Label parse failed: ${err instanceof Error ? err.message : String(err)}`);
+      setError(`Label scanning unavailable: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 

@@ -14,7 +14,16 @@ unlike provider-specific structured-output APIs.
 import json
 from typing import TypeVar
 
-from openai import AsyncOpenAI
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+    AuthenticationError,
+    NotFoundError,
+    OpenAIError,
+    RateLimitError,
+)
 from pydantic import BaseModel, ValidationError
 
 from app.services.runtime_settings import LlmTask, resolve_provider
@@ -32,6 +41,37 @@ SCHEMA_PREAMBLE = (
 
 class LLMError(RuntimeError):
     pass
+
+
+def describe_llm_error(
+    exc: LLMError | OpenAIError,
+    *,
+    task_label: str,
+    model: str,
+) -> tuple[int, str]:
+    """Map provider failures to safe, actionable API feedback."""
+    settings_hint = f"Check the {task_label.lower()} provider in Settings and run its connection test."
+    if isinstance(exc, AuthenticationError):
+        return 502, f"The {task_label.lower()} provider rejected its credentials. {settings_hint}"
+    if isinstance(exc, NotFoundError):
+        return 502, (
+            f"The configured {task_label.lower()} model '{model}' was not found or is no longer "
+            f"available. Select a supported model in Settings and run its connection test."
+        )
+    if isinstance(exc, RateLimitError):
+        return 429, f"The {task_label.lower()} provider is rate limited. Wait and try again."
+    if isinstance(exc, APITimeoutError):
+        return 504, f"The {task_label.lower()} provider timed out. Try again or {settings_hint.lower()}"
+    if isinstance(exc, APIConnectionError):
+        return 502, f"PlateOS could not reach the {task_label.lower()} provider. {settings_hint}"
+    if isinstance(exc, APIStatusError):
+        return 502, (
+            f"The {task_label.lower()} provider returned HTTP {exc.status_code}. {settings_hint}"
+        )
+    return 502, (
+        f"The {task_label.lower()} provider returned data PlateOS could not validate. "
+        "Try a clearer image or test another model in Settings."
+    )
 
 
 _clients: dict[tuple[str, str], AsyncOpenAI] = {}

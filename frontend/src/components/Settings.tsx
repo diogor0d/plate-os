@@ -37,8 +37,8 @@ const PRESETS: Preset[] = [
     id: "gemini",
     label: "Gemini",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    textModel: "gemini-2.0-flash",
-    visionModel: "gemini-2.0-flash",
+    textModel: "gemini-3.6-flash",
+    visionModel: "gemini-3.6-flash",
   },
   {
     id: "ollama",

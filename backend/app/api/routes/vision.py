@@ -6,21 +6,24 @@ renders an editable proposal card and only a subsequent POST /api/meal-logs
 (with explicit user confirmation) persists anything.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from openai import OpenAIError
 
 from app.api.deps import get_current_profile
 from app.models import UserProfile
 from app.schemas.api import VisionParseRequest
 from app.schemas.llm_contracts import NutritionLabelExtraction
 from app.schemas.products import ProductCandidate
-from app.services.llm import get_llm
+from app.services.llm import LLMError, describe_llm_error, get_llm
 from app.services.nutrition import normalize_extraction
 from app.services.product_candidates import issue_candidate_proof
 
 router = APIRouter(prefix="/api/vision", tags=["vision"])
+logger = logging.getLogger(__name__)
 
 VISION_SYSTEM = (
     "You are a nutrition-label OCR extractor. Extract the nutrition facts "
@@ -43,12 +46,21 @@ async def parse_label(
         data_url = "data:image/jpeg;base64," + data_url
 
     llm = get_llm("vision")
-    extraction = await llm.extract_json(
-        system=VISION_SYSTEM,
-        prompt="Extract the nutrition facts from this label image.",
-        schema=NutritionLabelExtraction,
-        image_data_urls=[data_url],
-    )
+    try:
+        extraction = await llm.extract_json(
+            system=VISION_SYSTEM,
+            prompt="Extract the nutrition facts from this label image.",
+            schema=NutritionLabelExtraction,
+            image_data_urls=[data_url],
+        )
+    except (LLMError, OpenAIError) as exc:
+        status_code, detail = describe_llm_error(
+            exc,
+            task_label="Label scanning",
+            model=llm.model,
+        )
+        logger.warning("Vision provider request failed: %s", detail)
+        raise HTTPException(status_code=status_code, detail=detail) from exc
     per100 = normalize_extraction(extraction)
     issues = []
     if extraction.product_name is None:

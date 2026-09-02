@@ -181,7 +181,7 @@ defaults:
 | Backend | Endpoint | Model examples |
 | --- | --- | --- |
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` / `gpt-4o` |
-| Gemini (OpenAI compat) | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.0-flash` |
+| Gemini (OpenAI compat) | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-3.6-flash` |
 | Ollama (local, fully private) | `http://localhost:11434/v1` | `qwen2.5:7b` / `qwen2.5vl:7b` |
 
 Use **Test connection** to validate a swap before relying on it — failures
@@ -208,7 +208,7 @@ behind Cloudflare Access Service Auth, also attach the
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest    # 184 unit/contract/integrity tests
+cd backend  && .venv/bin/python -m pytest    # 188 unit/contract/integrity tests
 cd frontend && npm test                      # 43 math/domain/offline tests
 cd frontend && npm run typecheck             # strict TS
 cd frontend && npm run build                 # typecheck + build + PWA generation
