@@ -181,7 +181,7 @@ cp ../.env.example .env   # adjust
 
 **Local review stack:** `docker compose -f docker-compose.dev.yml up --build --wait` serves `http://127.0.0.1:8081` with disposable `admin` / `changeme` credentials and isolated `plateos-dev` volumes (D40). Use `down` without `-v` to preserve review data.
 
-**Production stack:** hardened Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin. API runs migrations on boot. Never reuse development credentials in this flow. Production runs commit `dbf9d39` without the optional push profile; it supersedes the initial content-addressed D41 artifact recorded by D42.
+**Production stack:** hardened Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin. API runs migrations on boot. Never reuse development credentials in this flow. Production runs commit `d12794a` without the optional push profile; it supersedes the initial content-addressed D41 artifact recorded by D42.
 
 **Verification expectations:** 188 pytest tests and 44 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 30 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The review database upgraded through `0005` and the local stack/build passed 2026-09-02. Production also upgraded `0003 → 0005`, reached healthy readiness, and passed authenticated read-only API checks on 2026-09-02 (D42). The `dbf9d39` mobile shell and standalone viewport passed physical iPhone testing on 2026-09-03 (D46); real push delivery, authenticated edge access, production restore, and remaining iOS camera/offline behavior remain separate.
 
@@ -225,7 +225,7 @@ cp ../.env.example .env   # adjust
 - [x] Rough/defined routines, schedules, DST-aware occurrences, agenda/countdown, and Proposal Card completion (D41, 2026-09-02)
 - [x] Constrained AI meal-plan drafts with explicit routine/schedule confirmation (D41, 2026-09-02)
 - [x] Transport-neutral notification outbox and isolated opt-in Web Push worker with generic payloads (D41, 2026-09-02)
-- [x] Homelab production deployment: commit `dbf9d39`, `0003 → 0005`, loopback origin, TLS/Access challenge, and pre/post encrypted backup checksums (D42, 2026-09-02)
+- [x] Homelab production deployment: commit `d12794a`, `0003 → 0005`, loopback origin, TLS/Access challenge, and pre/post encrypted backup checksums (D42, 2026-09-03)
 - [x] Physical iPhone PWA shell verification: stable bottom navigation and full standalone viewport without phantom browser-toolbar space (D44-D46, 2026-09-03)
 - [ ] Production recovery operations: choose destination, schedule, retention, RPO/RTO, monitoring, and execute an authorized restore drill from a production backup
 - [ ] Real LLM round-trips (point `PLATEOS_LLM_BASE_URL` at OpenAI/Gemini/DeepSeek/Ollama and exercise vision + chat)
