@@ -104,6 +104,8 @@ const PAGE_DESCRIPTIONS: Record<Tab, string> = {
 };
 
 const TEXT_EYEBROW = "text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500";
+const RELEASE = import.meta.env.VITE_PLATEOS_VERSION || "development";
+const RELEASE_LABEL = RELEASE === "development" ? "dev" : RELEASE.slice(0, 7);
 
 export default function App() {
   const qc = useQueryClient();
@@ -256,7 +258,15 @@ export default function App() {
         {/* Mobile header */}
         <header className="space-y-3 py-4 md:hidden">
           <div className="flex items-center justify-between">
-            <h1 className="text-lg font-semibold tracking-tight">PlateOS</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-semibold tracking-tight">PlateOS</h1>
+              <span
+                title={`Release ${RELEASE}`}
+                className="rounded border border-zinc-800 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-600"
+              >
+                {RELEASE_LABEL}
+              </span>
+            </div>
             {statusLine}
           </div>
           <TargetBars summary={summary.data} />

@@ -106,6 +106,8 @@ services:
     build:
       context: ./frontend
       pull: true
+      args:
+        PLATEOS_VERSION: ${PLATEOS_IMAGE_TAG:-development}
     restart: unless-stopped
     init: true
     read_only: true
