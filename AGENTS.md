@@ -181,7 +181,7 @@ cp ../.env.example .env   # adjust
 
 **Local review stack:** `docker compose -f docker-compose.dev.yml up --build --wait` serves `http://127.0.0.1:8081` with disposable `admin` / `changeme` credentials and isolated `plateos-dev` volumes (D40). Use `down` without `-v` to preserve review data.
 
-**Production stack:** hardened Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin. API runs migrations on boot. Never reuse development credentials in this flow. Production runs commit `ff0526d` without the optional push profile; it supersedes the initial content-addressed D41 artifact recorded by D42.
+**Production stack:** hardened Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin. API runs migrations on boot. Never reuse development credentials in this flow. Production runs commit `3df53fe` without the optional push profile; it supersedes the initial content-addressed D41 artifact recorded by D42.
 
 **Verification expectations:** 188 pytest tests and 43 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 30 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The review database upgraded through `0005` and the local stack/build passed 2026-09-02. Production also upgraded `0003 → 0005`, reached healthy readiness, and passed authenticated read-only API checks on 2026-09-02 (D42). Real push delivery, authenticated edge access, production restore, and iOS evidence remain separate.
 
@@ -223,7 +223,7 @@ cp ../.env.example .env   # adjust
 - [x] Rough/defined routines, schedules, DST-aware occurrences, agenda/countdown, and Proposal Card completion (D41, 2026-09-02)
 - [x] Constrained AI meal-plan drafts with explicit routine/schedule confirmation (D41, 2026-09-02)
 - [x] Transport-neutral notification outbox and isolated opt-in Web Push worker with generic payloads (D41, 2026-09-02)
-- [x] Homelab production deployment: commit `ff0526d`, `0003 → 0005`, loopback origin, TLS/Access challenge, and pre/post encrypted backup checksums (D42, 2026-09-02)
+- [x] Homelab production deployment: commit `3df53fe`, `0003 → 0005`, loopback origin, TLS/Access challenge, and pre/post encrypted backup checksums (D42, 2026-09-02)
 - [ ] Production recovery operations: choose destination, schedule, retention, RPO/RTO, monitoring, and execute an authorized restore drill from a production backup
 - [ ] Real LLM round-trips (point `PLATEOS_LLM_BASE_URL` at OpenAI/Gemini/DeepSeek/Ollama and exercise vision + chat)
 - [ ] iOS device testing: camera in standalone PWA, install/offline behavior, safe areas
