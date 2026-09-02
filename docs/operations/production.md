@@ -3,7 +3,7 @@
 ## Status and evidence boundary
 
 - Runtime state: `VERIFIED` on 2026-09-02 at the approved homelab target. Public
-  repository commit `7e12921` runs as healthy `db`, `api`, and `web` services
+  repository commit `b7b53a9` runs as healthy `db`, `api`, and `web` services
   with a loopback-only origin; schema migration `0003` to `0005` completed
   successfully. It supersedes the initial content-addressed D41 deployment
   recorded by D42.
