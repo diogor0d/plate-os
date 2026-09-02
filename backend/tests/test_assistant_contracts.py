@@ -3,6 +3,7 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
+from app.api.routes.chat import MEAL_PLAN_POLICY
 from app.schemas.api import ChatRequest
 from app.schemas.llm_contracts import AssistantHarnessResponse, FoodItemProposal
 
@@ -71,6 +72,98 @@ def test_confirmation_cannot_be_disabled():
         AssistantHarnessResponse.model_validate(
             {"assistant_message": "Draft", "blocks": [block]}
         )
+
+
+def test_meal_plan_draft_accepts_rough_routine_and_weekly_schedule():
+    response = AssistantHarnessResponse.model_validate(
+        {
+            "assistant_message": "Review this reusable meal idea.",
+            "blocks": [{
+                "type": "meal_plan_draft",
+                "title": "Weekday lunch",
+                "rough_text": "A protein, a whole grain, and two vegetables.",
+                "schedule": {
+                    "local_time": "12:30",
+                    "timezone": "Europe/Lisbon",
+                    "frequency": "weekly",
+                    "interval": 1,
+                    "iso_weekdays": [1, 3, 5],
+                    "start_date": "2026-09-07",
+                    "end_date": "2026-12-18",
+                    "reminder_minutes": 30,
+                },
+                "requires_user_confirmation": True,
+            }],
+        }
+    )
+    block = response.blocks[0]
+    assert block.type == "meal_plan_draft"
+    assert block.schedule is not None
+    assert block.schedule.iso_weekdays == [1, 3, 5]
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        {"frequency": "daily", "iso_weekdays": [1]},
+        {"frequency": "weekly", "iso_weekdays": []},
+        {"frequency": "weekly", "iso_weekdays": [1, 1]},
+        {"frequency": "weekly", "iso_weekdays": [0]},
+        {"frequency": "daily", "iso_weekdays": [], "interval": 5},
+        {"frequency": "daily", "iso_weekdays": [], "reminder_minutes": 1441},
+        {"frequency": "daily", "iso_weekdays": [], "timezone": "Not/AZone"},
+        {"frequency": "daily", "iso_weekdays": [], "start_date": "2026-02-30"},
+        {"frequency": "daily", "iso_weekdays": [], "start_date": "2026-09-07T00:00:00"},
+        {"frequency": "daily", "iso_weekdays": [], "local_time": "12:30:00.5"},
+        {"frequency": "daily", "iso_weekdays": [], "end_date": "2026-09-01"},
+    ],
+)
+def test_meal_plan_draft_rejects_invalid_schedule(schedule):
+    valid = {
+        "local_time": "12:30",
+        "timezone": "Europe/Lisbon",
+        "frequency": "daily",
+        "interval": 1,
+        "iso_weekdays": [],
+        "start_date": "2026-09-07",
+        "end_date": None,
+        "reminder_minutes": None,
+    }
+    with pytest.raises(ValidationError):
+        AssistantHarnessResponse.model_validate({
+            "assistant_message": "Draft",
+            "blocks": [{
+                "type": "meal_plan_draft",
+                "title": "Lunch",
+                "rough_text": "A balanced lunch.",
+                "schedule": {**valid, **schedule},
+                "requires_user_confirmation": True,
+            }],
+        })
+
+
+@pytest.mark.parametrize("confirmation", [False, None])
+def test_meal_plan_draft_requires_literal_confirmation(confirmation):
+    confirmation_field = {} if confirmation is None else {
+        "requires_user_confirmation": confirmation
+    }
+    with pytest.raises(ValidationError):
+        AssistantHarnessResponse.model_validate({
+            "assistant_message": "Draft",
+            "blocks": [{
+                "type": "meal_plan_draft",
+                "title": "Lunch",
+                "rough_text": "A balanced lunch.",
+                "schedule": None,
+                **confirmation_field,
+            }],
+        })
+
+
+def test_meal_plan_prompt_preserves_confirmation_and_computation_boundaries():
+    assert "PlateOS computes" in MEAL_PLAN_POLICY
+    assert "explicitly confirm" in MEAL_PLAN_POLICY
+    assert "create meal logs" in MEAL_PLAN_POLICY
 
 
 @pytest.mark.parametrize(

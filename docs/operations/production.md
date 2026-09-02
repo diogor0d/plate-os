@@ -2,7 +2,10 @@
 
 ## Status and evidence boundary
 
-- Desired state: `INTENDED`; no PlateOS production deployment is recorded.
+- Runtime state: `VERIFIED` on 2026-09-02 at the approved homelab target. The
+  content-addressed D41 release `d41-5bccac401913` runs as healthy `db`, `api`,
+  and `web` services with a loopback-only origin; schema migration `0003` to
+  `0005` completed successfully.
 - Intended target: the operator's approved Ubuntu Docker host. Hostnames,
   addresses, and tunnel specifics live in the operator's private homelab
   inventory, deliberately outside this public repository.
@@ -10,12 +13,26 @@
   `0001` to `0002`, request and auth boundaries, synthetic encrypted backup, and
   isolated application restore. This is workstation evidence, not production
   deployment or recoverability evidence.
+- `VERIFIED` locally on 2026-09-02: review-stack migration through `0005`, API
+  readiness, frontend production/PWA build, and Web Push contract/security tests.
+  No real push provider or device delivery was exercised.
 - Target runtime expectation (private snapshot 2026-07-16): x86_64 Linux host
   with Docker Engine and Compose available. Re-verify actual versions during
   the authorized pre-deployment inspection.
-- `UNVERIFIED`: current capacity, checkout path, free listener, firewall,
-  tunnel/proxy route, access policy, monitoring, secret store, backup
-  destination, schedule, retention, RPO, RTO, and production restore evidence.
+- `VERIFIED` on 2026-09-02: sufficient target capacity, Docker/Compose runtime,
+  release path, loopback listener, local liveness/readiness, authenticated
+  profile/product/routine reads, password login, cookie-only push status, the
+  30-path OpenAPI surface, and an external TLS Access challenge without an
+  origin error.
+- `VERIFIED` on 2026-09-02: encrypted pre-migration and post-migration database
+  archives were created and their ciphertext checksums passed. This is not a
+  recoverability claim: decryptability, independent retention, scheduling,
+  monitoring, and an isolated restore from a production archive remain
+  `UNVERIFIED`.
+- `UNVERIFIED`: authenticated end-to-end edge access, denied origin-bypass paths,
+  firewall behavior, monitoring, backup schedule/retention, RPO/RTO, production
+  restore, real Web Push delivery, and physical iOS behavior. The optional push
+  worker remains disabled pending separately managed key material.
 - Before choosing `PLATEOS_PORT`, perform an authorized current-listener check
   on the target host and record the binding in an exposure matrix; never assume
   a documented or previously seen port is still free.
@@ -30,6 +47,7 @@ deployment, migration, backup access, DNS, firewall, Cloudflare, or deletion.
 | `db` | Pinned PostgreSQL 17, UID 70, read-only root, no capabilities | `pgdata`; internal `data` network only; no host port |
 | `api` | Pinned non-root Python image, read-only root, no capabilities | Secret files read-only; `app_settings` volume for Settings-screen state; `data` and `app` networks; outbound access for OFF/LLM |
 | `web` | Pinned non-root Caddy image, read-only root, no capabilities | `app` network; fixed IPv4-loopback address and configurable port |
+| `push-worker` | Opt-in non-root API image, read-only root, no capabilities | `data` plus egress networks; DB and Web Push secrets only; no API/session/LLM secrets |
 | `backup` | Opt-in operations profile, pinned PostgreSQL client plus verified age binary | Reads DB; writes encrypted dumps to a configured bind destination |
 
 Docker logs are bounded to three 10 MB files per service. CPU, memory, PID, and
@@ -59,6 +77,13 @@ rotation, and recovery remain `TBD`.
 | `plateos_llm_api_key` | API | Optional; only for a provider requiring a key |
 | `plateos_api_token` | API | Optional; random, at least 32 characters; full API access |
 | `plateos_backup_recipient` | Backup job | age public recipient only, never the private identity |
+| `plateos_web_push_public_key` | API, push worker | URL-safe VAPID application-server public key |
+| `plateos_web_push_subscription_key` | API, push worker | Fernet key used to encrypt browser subscriptions at rest |
+| `plateos_web_push_vapid_subject` | Push worker | `mailto:` or HTTPS operator contact |
+
+The VAPID private key is intentionally outside `PLATEOS_SECRETS_DIR` because the
+API mounts that directory. Point `PLATEOS_PUSH_PRIVATE_KEY_FILE` at a separately
+protected PEM file; only `push-worker` mounts it.
 
 Production validation rejects defaults, low-diversity secrets, insecure
 cookies, short optional API tokens, and incomplete/non-async PostgreSQL URLs.
@@ -108,6 +133,8 @@ Production `.env` should contain only non-secret Compose settings:
 - `PLATEOS_SECRETS_GID`: numeric dedicated group allowed to read secret files.
 - `PLATEOS_BACKUP_DIR`: approved encrypted-backup staging/destination path.
 - `PLATEOS_BACKUP_UID` and `PLATEOS_BACKUP_GID`: owner of that destination.
+- `PLATEOS_PUSH_PRIVATE_KEY_FILE`: protected worker-only VAPID PEM path when the
+  optional `push` profile is enabled.
 - `POSTGRES_USER` and `POSTGRES_DB`: non-secret logical names.
 - LLM endpoint/model, OFF endpoint, timezone, and profile seed defaults.
 
@@ -160,10 +187,10 @@ TypeScript checking, the production frontend build, and PWA generation.
 Build only from a clean, recorded source revision:
 
 ```bash
-docker compose --profile operations build --pull
+docker compose --profile operations --profile push build --pull
 ```
 
-What it does: Creates local API, web, and operations images from digest-pinned
+What it does: Creates local API, web, push-worker, and operations images from digest-pinned
 bases and locked dependencies. It changes the local Docker image store; on a
 production host it requires explicit build/deployment authorization. Record the
 resulting image IDs and retain the previous known-good images.
@@ -262,7 +289,7 @@ docker compose -f docker-compose.restore.yml --profile verification run --rm --n
 
 What it does: Creates a fresh drill project, decrypts into a FIFO, restores only
 into an empty isolated PostgreSQL volume, and requires restore success before the
-API can start. It accepts source revisions `0001` and `0002`, migrates the
+API can start. It accepts source revisions `0001` through `0005`, migrates the
 restored DB to current head through the normal API entrypoint, verifies readiness,
 confirms unauthenticated denial, logs in with the drill credential, and performs
 representative authenticated reads. `set -e` prevents verification after a

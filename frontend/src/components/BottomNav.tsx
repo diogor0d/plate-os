@@ -1,15 +1,21 @@
-import { BarChart3, Home, MessageCircle, ScanLine, Settings } from "lucide-react";
+import { BarChart3, CalendarClock, Home, MessageCircle, ScanLine, Settings } from "lucide-react";
 import { cn } from "../lib/utils";
 
-export type Tab = "today" | "scan" | "coach" | "stats" | "settings";
+export type Tab = "today" | "scan" | "plan" | "coach" | "stats" | "settings";
 
-export const TABS = [
-  { id: "today", label: "Today", icon: Home },
-  { id: "scan", label: "Scan", icon: ScanLine },
+export const TABS: readonly {
+  id: Tab;
+  label: string;
+  icon: typeof Home;
+  mobileIconClassName?: string;
+}[] = [
+  { id: "today", label: "Today", icon: Home, mobileIconClassName: "translate-y-0.5" },
+  { id: "scan", label: "Scan", icon: ScanLine, mobileIconClassName: "translate-y-0.5" },
+  { id: "plan", label: "Plan", icon: CalendarClock, mobileIconClassName: "translate-y-0.5" },
   { id: "coach", label: "Coach", icon: MessageCircle },
   { id: "stats", label: "Stats", icon: BarChart3 },
   { id: "settings", label: "Settings", icon: Settings },
-] as const satisfies { id: Tab; label: string; icon: typeof Home }[];
+];
 
 export function BottomNav({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
   return (
@@ -17,8 +23,8 @@ export function BottomNav({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void })
       aria-label="Primary"
       className="fixed inset-x-0 bottom-0 z-10 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur pb-safe md:hidden"
     >
-      <div className="mx-auto grid max-w-md grid-cols-5">
-        {TABS.map(({ id, label, icon: Icon }) => (
+      <div className="mx-auto grid max-w-md grid-cols-6">
+        {TABS.map(({ id, label, icon: Icon, mobileIconClassName }) => (
           <button
             key={id}
             type="button"
@@ -29,7 +35,7 @@ export function BottomNav({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void })
               tab === id ? "text-emerald-400" : "text-zinc-500",
             )}
           >
-            <Icon className="h-5 w-5" />
+            <Icon className={cn("h-5 w-5", mobileIconClassName)} />
             {label}
           </button>
         ))}

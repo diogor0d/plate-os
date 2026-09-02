@@ -85,6 +85,7 @@ export interface ProviderConfig {
 
 /** Session identity (backend contract: MeOut). */
 export interface MeInfo {
+  id: string;
   username: string;
   is_admin: boolean;
 }

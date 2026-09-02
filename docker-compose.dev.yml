@@ -1,0 +1,129 @@
+# One-command workstation stack for local review. These credentials are
+# intentionally weak and must never be reused outside this isolated project.
+name: plateos-dev
+
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: plateos
+      POSTGRES_PASSWORD: plateos
+      POSTGRES_DB: plateos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U plateos -d plateos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - data
+    logging: *bounded-logging
+
+  api:
+    image: plateos-dev-api
+    build:
+      context: ./backend
+      pull: true
+    restart: unless-stopped
+    init: true
+    environment:
+      PLATEOS_ENVIRONMENT: development
+      PLATEOS_DATABASE_URL: postgresql+asyncpg://plateos:plateos@db:5432/plateos
+      PLATEOS_APP_PASSWORD: changeme
+      PLATEOS_SESSION_SECRET: local-review-only
+      PLATEOS_COOKIE_SECURE: "false"
+      PLATEOS_RUNTIME_SETTINGS_FILE: /srv/data/runtime-settings.json
+      PLATEOS_DEFAULT_USER_TIMEZONE: ${PLATEOS_DEFAULT_USER_TIMEZONE:-Europe/Lisbon}
+      PLATEOS_WEB_PUSH_PUBLIC_KEY: ${PLATEOS_WEB_PUSH_PUBLIC_KEY:-}
+      PLATEOS_WEB_PUSH_SUBSCRIPTION_KEY: ${PLATEOS_WEB_PUSH_SUBSCRIPTION_KEY:-}
+    volumes:
+      - app_settings:/srv/data
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - data
+      - app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=3).read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    logging: *bounded-logging
+
+  web:
+    image: plateos-dev-web
+    build:
+      context: ./frontend
+      pull: true
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:${PLATEOS_DEV_PORT:-8081}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    logging: *bounded-logging
+
+  push-worker:
+    profiles:
+      - push
+    image: plateos-dev-api
+    build:
+      context: ./backend
+      pull: true
+    command: ["python", "-m", "app.workers.web_push"]
+    restart: on-failure
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PLATEOS_ENVIRONMENT: development
+      PLATEOS_PROCESS_ROLE: worker
+      PLATEOS_DATABASE_URL: postgresql+asyncpg://plateos:plateos@db:5432/plateos
+      PLATEOS_WEB_PUSH_PUBLIC_KEY: ${PLATEOS_WEB_PUSH_PUBLIC_KEY:-}
+      PLATEOS_WEB_PUSH_PRIVATE_KEY: ${PLATEOS_WEB_PUSH_PRIVATE_KEY:-}
+      PLATEOS_WEB_PUSH_SUBSCRIPTION_KEY: ${PLATEOS_WEB_PUSH_SUBSCRIPTION_KEY:-}
+      PLATEOS_WEB_PUSH_VAPID_SUBJECT: ${PLATEOS_WEB_PUSH_VAPID_SUBJECT:-}
+      PLATEOS_WEB_PUSH_POLL_SECONDS: ${PLATEOS_WEB_PUSH_POLL_SECONDS:-15}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - data
+      - push-egress
+    tmpfs:
+      - /tmp:size=32m,mode=1777,uid=10001,gid=10001
+    stop_grace_period: 30s
+    logging: *bounded-logging
+
+networks:
+  app:
+  data:
+    internal: true
+  push-egress:
+
+volumes:
+  pgdata:
+  app_settings:

@@ -1,5 +1,6 @@
 """SSE transport for the constrained assistant harness (D39)."""
 
+import asyncio
 import json
 import logging
 import uuid
@@ -17,6 +18,13 @@ from app.services.assistant import run_assistant
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
+
+MEAL_PLAN_POLICY = """PlateOS meal-plan policy: when the user asks for a reusable
+meal plan, use a meal_plan_draft with a rough routine and, only when useful, a
+bounded schedule. Do not invent product or database IDs, calculate recurrence
+occurrences, create meal logs, or claim anything was saved. PlateOS computes
+recurrence state, and the user must review and explicitly confirm before the
+routine and optional schedule are created."""
 
 
 def _sse(event: str, data: dict) -> str:
@@ -42,7 +50,10 @@ async def chat_stream(
             },
         )
         try:
-            response = await run_assistant(session, profile, body)
+            assistant_request = body.model_copy(
+                update={"message": f"{body.message}\n\n{MEAL_PLAN_POLICY}"}
+            )
+            response = await run_assistant(session, profile, assistant_request)
             session.add(
                 ChatMessage(
                     user_id=profile.id,
@@ -68,6 +79,9 @@ async def chat_stream(
             words = response.assistant_message.split(" ")
             for index in range(0, len(words), 4):
                 yield _sse("delta", {"text": " ".join(words[index : index + 4]) + " "})
+                # The provider call is structured rather than token-streamed;
+                # pace prepared chunks so the client still gets a legible stream.
+                await asyncio.sleep(0.025)
 
             for index, block in enumerate(response.blocks):
                 dumped = block.model_dump(mode="json")

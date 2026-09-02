@@ -1,20 +1,26 @@
-/**
- * Scan sheet with camera pipeline redundancy (brief constraint #5):
- * - Barcode: <video> getUserMedia stream fed to ZXing (BarcodeDetector fast
- *   path where available).
- * - Label OCR: native <input type="file" capture="environment"> for maximum
- *   focus quality on small label text, routed through the canvas downscaler
- *   before hitting /api/vision/parse-label.
- * Both paths end in a Proposal Card — nothing is persisted here.
- */
 import { useEffect, useRef, useState } from "react";
-import { Camera, ScanLine } from "lucide-react";
+import { Camera, CheckCircle2, Library, ScanLine, ShieldCheck, TriangleAlert } from "lucide-react";
 import { Button } from "./ui/button";
-import { api } from "../lib/api";
+import { ApiError, api } from "../lib/api";
 import { downscaleImage } from "../lib/image";
 import { startBarcodeScan } from "../lib/barcode";
-import type { FoodItem, Per100 } from "../lib/types";
 import { ProposalCard, type ProposalCardItem } from "./ProposalCard";
+import { ProductFields, ProductLibrary } from "./ProductLibrary";
+import {
+  candidateDraftIsUnchanged,
+  createProduct,
+  draftFromCandidate,
+  per100FromProduct,
+  productFingerprint,
+  sourceLabel,
+  stableMutation,
+  validateProductDraft,
+  type BarcodeResolution,
+  type Product,
+  type ProductCandidate,
+  type ProductDraft,
+  type StableMutation,
+} from "../lib/products";
 
 export function ScanSheet({ onClose }: { onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -23,6 +29,15 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const [scanning, setScanning] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [proposal, setProposal] = useState<ProposalCardItem[] | null>(null);
+  const [candidate, setCandidate] = useState<ProductCandidate | null>(null);
+  const [draft, setDraft] = useState<ProductDraft | null>(null);
+  const [comparison, setComparison] = useState<ProductCandidate | null>(null);
+  const [notFound, setNotFound] = useState<string | null>(null);
+  const [proposalProvenance, setProposalProvenance] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const saveMutation = useRef<StableMutation | null>(null);
 
   useEffect(() => {
     return () => {
@@ -40,6 +55,13 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   };
 
   const startScan = async () => {
+    setCandidate(null);
+    setDraft(null);
+    setComparison(null);
+    setNotFound(null);
+    setProposal(null);
+    setProposalProvenance(null);
+    setError(null);
     setStatus(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -61,60 +83,143 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
 
   const handleBarcode = async (barcode: string) => {
     stopScan();
-    setStatus(`Looking up ${barcode}…`);
+    setCandidate(null);
+    setDraft(null);
+    setComparison(null);
+    setNotFound(null);
+    setProposal(null);
+    setProposalProvenance(null);
+    setError(null);
+    setStatus(`Looking up ${barcode}...`);
     try {
-      const item = await api<FoodItem>(`/api/food-items/barcode/${encodeURIComponent(barcode)}`);
-      setProposal([
-        {
-          name: (item.brand ? `${item.name} (${item.brand})` : item.name).slice(0, 255),
-          per100: {
-            calories: item.calories_per_100,
-            protein_g: item.protein_per_100,
-            carbs_g: item.carbs_per_100,
-            fat_g: item.fat_per_100,
-            fiber_g: item.fiber_per_100,
-          },
-          quantityG: 100,
-          foodItemId: item.id,
-          sourceType: "barcode",
-        },
-      ]);
+      const resolution = await api<BarcodeResolution>(`/api/food-items/barcode/${encodeURIComponent(barcode)}`);
+      if (resolution.kind === "accepted") {
+        setProposal([proposalFromProduct(resolution.product)]);
+        setProposalProvenance(`Accepted local product · ${sourceLabel(resolution.product.nutrition_source)}`);
+      } else if (resolution.kind === "candidate") {
+        setCandidate(resolution.candidate);
+        setDraft(draftFromCandidate(resolution.candidate));
+      } else {
+        setNotFound(resolution.barcode);
+      }
       setStatus(null);
     } catch (err) {
-      setStatus(`Lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+      setStatus(null);
+      if (err instanceof ApiError && err.status === 502) {
+        setError("Open Food Facts could not be reached. This is an upstream error, not a confirmed barcode miss. Try again later or use a label photo.");
+      } else {
+        setError(`Lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   };
 
-  const handleLabelPhoto = async (file: File | undefined) => {
+  const parseLabel = async (file: File | undefined, compare: boolean) => {
     if (!file) return;
-    setStatus("Parsing label…");
+    setError(null);
+    setStatus(compare ? "Comparing label..." : "Parsing label...");
     try {
       const dataUrl = await downscaleImage(file);
-      const res = await api<{ product_name: string | null; per100: Per100; confidence_score: number }>(
-        "/api/vision/parse-label",
+      const barcode = draft?.barcode.trim();
+      const query = barcode ? `?barcode=${encodeURIComponent(barcode)}` : "";
+      const result = await api<ProductCandidate>(
+        `/api/vision/parse-label${query}`,
         { method: "POST", body: JSON.stringify({ image_base64: dataUrl }) },
       );
-      setProposal([
-        {
-          name: res.product_name ?? "Scanned product",
-          per100: res.per100,
-          quantityG: 100,
-          sourceType: "vision_label",
-        },
-      ]);
+      if (compare && candidate) {
+        setComparison(result);
+      } else {
+        setCandidate(result);
+        setDraft(draftFromCandidate(result));
+        setComparison(null);
+        setNotFound(null);
+        setProposal(null);
+        setProposalProvenance(null);
+      }
       setStatus(null);
     } catch (err) {
-      setStatus(`Label parse failed: ${err instanceof Error ? err.message : String(err)}`);
+      setStatus(null);
+      setError(`Label parse failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
+
+  const reviewValue = () => {
+    if (!draft) return null;
+    const validated = validateProductDraft(draft);
+    if (validated.error) {
+      setError(validated.error);
+      return null;
+    }
+    return validated.value;
+  };
+
+  const logOnce = () => {
+    const value = reviewValue();
+    if (!value) return;
+    setError(null);
+    setProposal([{
+      name: value.brand ? `${value.name} (${value.brand})`.slice(0, 255) : value.name,
+      per100: value.per100,
+      quantityG: 100,
+      sourceType: candidate?.source === "vision_label" ? "vision_label" : "barcode",
+    }]);
+    setProposalProvenance(
+      `${candidate?.source === "vision_label" ? "Label extraction" : "Open Food Facts candidate"} · one-time log, not saved to your library`,
+    );
+  };
+
+  const save = async (andLog: boolean) => {
+    const value = reviewValue();
+    if (!value) return;
+    const fingerprint = productFingerprint({ operation: "create", value });
+    saveMutation.current = stableMutation(saveMutation.current, fingerprint);
+    setSaving(true);
+    setError(null);
+    try {
+      const product = await createProduct(value, saveMutation.current.id);
+      saveMutation.current = null;
+      setCandidate(null);
+      setDraft(null);
+      setComparison(null);
+      if (andLog) {
+        setProposal([proposalFromProduct(product)]);
+        setProposalProvenance(`Accepted local product · ${sourceLabel(product.nutrition_source)}`);
+      } else {
+        setStatus(`${product.name} is now an accepted product.`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const useComparison = () => {
+    if (!comparison || !draft) return;
+    const comparedDraft = draftFromCandidate(comparison);
+    setDraft({
+      ...comparedDraft,
+      barcode: draft.barcode,
+      name: comparison.issues.includes("missing_name") ? draft.name : comparedDraft.name,
+      brand: draft.brand,
+    });
+    setCandidate(comparison);
+    setComparison(null);
+  };
+
+  if (showLibrary) {
+    return <ProductLibrary onClose={() => setShowLibrary(false)} />;
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">Scan</h2>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Close
-        </Button>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setShowLibrary(true)}>
+            <Library className="h-3.5 w-3.5" /> Library
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
+        </div>
       </div>
 
       <video
@@ -137,22 +242,143 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             accept="image/*"
             capture="environment"
             className="hidden"
-            onChange={(e) => void handleLabelPhoto(e.target.files?.[0])}
+            onChange={(e) => {
+              void parseLabel(e.target.files?.[0], false);
+              e.target.value = "";
+            }}
           />
         </label>
       </div>
 
-      {status && <p className="text-xs text-zinc-400">{status}</p>}
+      <p className="text-[11px] leading-relaxed text-zinc-500">
+        Label photos are processed by your configured vision provider and may leave this host. Parsing is stateless and never saves a product or meal.
+      </p>
+
+      {status && <p role="status" className="text-xs text-zinc-400">{status}</p>}
+      {error && <p role="alert" className="text-xs leading-relaxed text-red-400">{error}</p>}
+
+      {notFound && (
+        <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <div className="flex items-start gap-2">
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <div>
+              <p className="text-sm font-medium">Barcode not found</p>
+              <p className="mt-1 text-xs text-zinc-500">Open Food Facts authoritatively returned no product for {notFound}. Take a label photo to review it without saving automatically.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {candidate && draft && !proposal && (
+        <div className="space-y-4 rounded-xl border border-amber-900/60 bg-zinc-900/70 p-4">
+          <div className="flex items-start gap-2">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <div>
+              <h3 className="text-sm font-semibold">Review external candidate</h3>
+              <p className="mt-1 text-xs leading-relaxed text-amber-200/70">
+                {candidate.source === "open_food_facts" ? "Open Food Facts candidate" : "Vision label extraction"}. This is not in your product library and has not been saved.
+              </p>
+            </div>
+          </div>
+
+          {candidate.issues.length > 0 && (
+            <p className="rounded-lg bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
+              Check flagged fields: {candidate.issues.map(issueLabel).join(", ")}.
+            </p>
+          )}
+          <ProductFields draft={draft} onChange={setDraft} />
+
+          {candidate.source === "open_food_facts" && (
+            <div className="space-y-2 rounded-lg border border-zinc-800 p-3">
+              <p className="text-xs font-medium text-zinc-300">Optional label verification</p>
+              <p className="text-[11px] text-zinc-500">Compare a downscaled label photo without saving either result. The image may leave this host.</p>
+              <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 text-xs font-medium hover:bg-zinc-800 active:scale-[0.98]">
+                <ScanLine className="h-3.5 w-3.5" /> Compare label
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(event) => {
+                    void parseLabel(event.target.files?.[0], true);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+          )}
+
+          {comparison && (
+            <div className="space-y-3 rounded-lg border border-emerald-900/50 bg-emerald-950/10 p-3">
+              <div>
+                <p className="text-xs font-semibold text-emerald-300">Stateless label comparison</p>
+                <p className="mt-1 text-[11px] text-zinc-500">Label confidence {Math.round((comparison.confidence_score ?? 0) * 100)}%. Review the differences before replacing the editable values.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs tabular-nums text-zinc-400 sm:grid-cols-3">
+                {comparisonRows(draft, comparison).map(([label, current, labelValue]) => (
+                  <p key={label}><span className="text-zinc-600">{label}</span> {current} → {labelValue}</p>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={useComparison}>Use label values</Button>
+                <Button size="sm" variant="ghost" onClick={() => setComparison(null)}>Keep current</Button>
+              </div>
+            </div>
+          )}
+
+          <p className="text-[11px] text-zinc-500">
+            Source if accepted: {sourceLabel(candidateDraftIsUnchanged(draft) ? draft.nutritionSource : "manual")}
+            {!candidateDraftIsUnchanged(draft) && " (candidate fields were edited)"}
+          </p>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Button variant="outline" onClick={logOnce} disabled={saving}>Log once</Button>
+            <Button variant="outline" onClick={() => void save(false)} disabled={saving}>{saving ? "Saving..." : "Save product"}</Button>
+            <Button onClick={() => void save(true)} disabled={saving}>{saving ? "Saving..." : "Save and log"}</Button>
+          </div>
+          <p className="text-[11px] text-zinc-600">Logging always opens the Proposal Card for final quantity review and confirmation.</p>
+        </div>
+      )}
 
       {proposal && (
-        <ProposalCard
-          items={proposal}
-          onDone={() => {
-            setProposal(null);
-            onClose();
-          }}
-        />
+        <div className="space-y-2">
+          {proposalProvenance && (
+            <p className="flex items-center gap-1.5 text-xs text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5" /> {proposalProvenance}
+            </p>
+          )}
+          <ProposalCard
+            items={proposal}
+            onDone={() => {
+              setProposal(null);
+              onClose();
+            }}
+          />
+        </div>
       )}
     </div>
   );
+}
+
+function proposalFromProduct(product: Product): ProposalCardItem {
+  return {
+    name: (product.brand ? `${product.name} (${product.brand})` : product.name).slice(0, 255),
+    per100: per100FromProduct(product),
+    quantityG: 100,
+    foodItemId: product.id,
+    sourceType: "barcode",
+  };
+}
+
+function issueLabel(issue: ProductCandidate["issues"][number]): string {
+  return issue.replace("missing_", "missing ").replace("calories", "calories");
+}
+
+function comparisonRows(draft: ProductDraft, comparison: ProductCandidate): [string, string, number][] {
+  return [
+    ["kcal", draft.calories, comparison.per100.calories],
+    ["protein", draft.protein, comparison.per100.protein_g],
+    ["carbs", draft.carbs, comparison.per100.carbs_g],
+    ["fat", draft.fat, comparison.per100.fat_g],
+    ["fiber", draft.fiber, comparison.per100.fiber_g],
+  ];
 }

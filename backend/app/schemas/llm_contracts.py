@@ -6,8 +6,9 @@ performs any arithmetic — all math lives in app.services.nutrition and its
 client-side mirror frontend/src/lib/nutrition.ts.
 """
 
-from datetime import date
+from datetime import date, time
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -134,6 +135,84 @@ class GoalDraftBlock(BaseModel):
     requires_user_confirmation: Literal[True] = True
 
 
+class MealPlanScheduleDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    local_time: time
+    timezone: str = Field(min_length=1, max_length=64)
+    frequency: Literal["daily", "weekly"]
+    interval: int = Field(default=1, ge=1, le=4)
+    iso_weekdays: list[int] = Field(default_factory=list, max_length=7)
+    start_date: date
+    end_date: date | None = None
+    reminder_minutes: int | None = Field(default=None, ge=0, le=1440)
+
+    @field_validator("local_time", mode="before")
+    @classmethod
+    def validate_local_time(cls, value: object) -> object:
+        if type(value) is time:
+            return value
+        if not isinstance(value, str) or len(value) not in {5, 8}:
+            raise ValueError("must use HH:MM or HH:MM:SS")
+        try:
+            parsed = time.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("must be a valid local time") from exc
+        if parsed.microsecond or parsed.isoformat(timespec="seconds")[: len(value)] != value:
+            raise ValueError("must use HH:MM or HH:MM:SS")
+        return parsed
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def validate_strict_date(cls, value: object) -> object:
+        if value is None or type(value) is date:
+            return value
+        if not isinstance(value, str) or len(value) != 10:
+            raise ValueError("must use YYYY-MM-DD")
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("must be a valid date") from exc
+        if parsed.isoformat() != value:
+            raise ValueError("must use YYYY-MM-DD")
+        return parsed
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("must be a valid IANA timezone") from exc
+        return value
+
+    @model_validator(mode="after")
+    def validate_recurrence(self) -> "MealPlanScheduleDraft":
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("end_date must not precede start_date")
+        if len(set(self.iso_weekdays)) != len(self.iso_weekdays):
+            raise ValueError("iso_weekdays must be unique")
+        if any(day < 1 or day > 7 for day in self.iso_weekdays):
+            raise ValueError("iso_weekdays must be between 1 and 7")
+        if self.frequency == "daily" and self.iso_weekdays:
+            raise ValueError("daily schedules cannot specify weekdays")
+        if self.frequency == "weekly" and not self.iso_weekdays:
+            raise ValueError("weekly schedules require weekdays")
+        return self
+
+
+class MealPlanDraftBlock(BaseModel):
+    """Review-only rough routine draft; persistence remains a user action."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    type: Literal["meal_plan_draft"]
+    title: str = Field(min_length=1, max_length=100)
+    rough_text: str = Field(min_length=1, max_length=2000)
+    schedule: MealPlanScheduleDraft | None = None
+    requires_user_confirmation: Literal[True]
+
+
 AnalyticsMetric = Literal["calories", "protein_g", "carbs_g", "fat_g", "fiber_g"]
 AnalyticsSource = Literal["vision_label", "text_estimate", "manual", "barcode"]
 
@@ -186,7 +265,11 @@ class EvidenceInsightBlock(BaseModel):
 
 
 AssistantBlock = Annotated[
-    MealProposalBlock | GoalDraftBlock | AnalyticsNavigationBlock | EvidenceInsightBlock,
+    MealProposalBlock
+    | GoalDraftBlock
+    | MealPlanDraftBlock
+    | AnalyticsNavigationBlock
+    | EvidenceInsightBlock,
     Field(discriminator="type"),
 ]
 
@@ -203,8 +286,10 @@ class AssistantHarnessResponse(BaseModel):
     @model_validator(mode="after")
     def limit_mutation_drafts(self) -> "AssistantHarnessResponse":
         types = [block.type for block in self.blocks]
-        if types.count("meal_proposal") > 1 or types.count("goal_draft") > 1:
-            raise ValueError("at most one meal proposal and one goal draft are allowed")
+        if any(types.count(block_type) > 1 for block_type in (
+            "meal_proposal", "goal_draft", "meal_plan_draft"
+        )):
+            raise ValueError("at most one draft of each mutation type is allowed")
         return self
 
 

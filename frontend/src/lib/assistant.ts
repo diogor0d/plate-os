@@ -36,9 +36,28 @@ export interface GoalTargets {
   target_fat_g: number;
 }
 
+export interface AssistantMealPlanSchedule {
+  local_time: string;
+  timezone: string;
+  frequency: "daily" | "weekly";
+  interval: number;
+  iso_weekdays: number[];
+  start_date: string;
+  end_date: string | null;
+  reminder_minutes: number | null;
+}
+
+export interface AssistantMealPlanDraft {
+  type: "meal_plan_draft";
+  title: string;
+  rough_text: string;
+  schedule: AssistantMealPlanSchedule | null;
+}
+
 export type AssistantBlock =
   | { type: "meal_proposal"; title: string; items: AssistantMealItem[] }
   | { type: "goal_draft"; proposed_targets: GoalTargets; rationale: string; caveats: string[] }
+  | AssistantMealPlanDraft
   | { type: "analytics_navigation"; label: string; description: string; query: Omit<AnalyticsIntent, "id"> }
   | { type: "evidence_insight"; title: string; interpretation: string; tone: "neutral" | "positive" | "warning" };
 
@@ -47,6 +66,7 @@ const metrics: AnalyticsMetric[] = ["calories", "protein_g", "carbs_g", "fat_g",
 const object = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const finite = (value: unknown, min: number, max: number): value is number => typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
 const text = (value: unknown, max: number): value is string => typeof value === "string" && value.length > 0 && value.length <= max;
+const onlyKeys = (value: Record<string, unknown>, keys: string[]): boolean => Object.keys(value).every((key) => keys.includes(key));
 const isoDate = (value: unknown): value is string => {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
@@ -89,6 +109,42 @@ function parseAnalyticsQuery(value: unknown): Omit<AnalyticsIntent, "id"> | null
   };
 }
 
+function parseMealPlanSchedule(value: unknown): AssistantMealPlanSchedule | null {
+  if (!object(value) || !onlyKeys(value, [
+    "local_time", "timezone", "frequency", "interval", "iso_weekdays",
+    "start_date", "end_date", "reminder_minutes",
+  ])) return null;
+  if (typeof value.local_time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(value.local_time)) return null;
+  if (typeof value.timezone !== "string" || value.timezone.length < 1 || value.timezone.length > 64) return null;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: value.timezone }).format();
+  } catch {
+    return null;
+  }
+  if (value.frequency !== "daily" && value.frequency !== "weekly") return null;
+  const interval = value.interval ?? 1;
+  const weekdays = value.iso_weekdays ?? [];
+  const endDate = value.end_date ?? null;
+  const reminder = value.reminder_minutes ?? null;
+  if (!finite(interval, 1, 4) || !Number.isInteger(interval)) return null;
+  if (!Array.isArray(weekdays) || weekdays.length > 7 || new Set(weekdays).size !== weekdays.length ||
+      !weekdays.every((day) => finite(day, 1, 7) && Number.isInteger(day))) return null;
+  if (value.frequency === "daily" ? weekdays.length !== 0 : weekdays.length === 0) return null;
+  if (!isoDate(value.start_date) || (endDate !== null && !isoDate(endDate))) return null;
+  if (endDate !== null && endDate < value.start_date) return null;
+  if (reminder !== null && (!finite(reminder, 0, 1440) || !Number.isInteger(reminder))) return null;
+  return {
+    local_time: value.local_time,
+    timezone: value.timezone,
+    frequency: value.frequency,
+    interval,
+    iso_weekdays: weekdays as number[],
+    start_date: value.start_date,
+    end_date: endDate,
+    reminder_minutes: reminder,
+  };
+}
+
 export function parseAssistantBlock(value: unknown): AssistantBlock | null {
   if (!object(value) || typeof value.type !== "string") return null;
   if (value.type === "meal_proposal") {
@@ -113,6 +169,15 @@ export function parseAssistantBlock(value: unknown): AssistantBlock | null {
     if (!Array.isArray(value.caveats) || value.caveats.length > 5 || !value.caveats.every((item) => text(item, 300))) return null;
     const caveats = value.caveats as string[];
     return { type: "goal_draft", proposed_targets: targets as unknown as GoalTargets, rationale: value.rationale, caveats };
+  }
+  if (value.type === "meal_plan_draft") {
+    if (!onlyKeys(value, ["type", "title", "rough_text", "schedule", "requires_user_confirmation"]) ||
+        !text(value.title, 100) || !value.title.trim() ||
+        !text(value.rough_text, 2000) || !value.rough_text.trim() ||
+        value.requires_user_confirmation !== true) return null;
+    const schedule = value.schedule == null ? null : parseMealPlanSchedule(value.schedule);
+    if (value.schedule != null && !schedule) return null;
+    return { type: "meal_plan_draft", title: value.title, rough_text: value.rough_text, schedule };
   }
   if (value.type === "analytics_navigation") {
     const query = parseAnalyticsQuery(value.query);

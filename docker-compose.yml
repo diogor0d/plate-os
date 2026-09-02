@@ -133,6 +133,69 @@ services:
     stop_grace_period: 15s
     logging: *bounded-logging
 
+  push-worker:
+    profiles:
+      - push
+    image: plateos-api:${PLATEOS_IMAGE_TAG:-development}
+    build:
+      context: ./backend
+      pull: true
+    command: ["python", "-m", "app.workers.web_push"]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - ${PLATEOS_SECRETS_GID:?set PLATEOS_SECRETS_GID}
+    environment:
+      PLATEOS_ENVIRONMENT: production
+      PLATEOS_PROCESS_ROLE: worker
+      PLATEOS_DATABASE_HOST: db
+      PLATEOS_DATABASE_PORT: "5432"
+      PLATEOS_DATABASE_USER: ${POSTGRES_USER:-plateos}
+      PLATEOS_DATABASE_NAME: ${POSTGRES_DB:-plateos}
+      PLATEOS_WEB_PUSH_POLL_SECONDS: ${PLATEOS_WEB_PUSH_POLL_SECONDS:-15}
+      PLATEOS_WEB_PUSH_BATCH_SIZE: ${PLATEOS_WEB_PUSH_BATCH_SIZE:-25}
+      PLATEOS_WEB_PUSH_LEASE_SECONDS: ${PLATEOS_WEB_PUSH_LEASE_SECONDS:-60}
+      PLATEOS_WEB_PUSH_REQUEST_TIMEOUT_SECONDS: ${PLATEOS_WEB_PUSH_REQUEST_TIMEOUT_SECONDS:-15}
+      PLATEOS_WEB_PUSH_MAX_ATTEMPTS: ${PLATEOS_WEB_PUSH_MAX_ATTEMPTS:-5}
+      PLATEOS_WEB_PUSH_RETRY_BASE_SECONDS: ${PLATEOS_WEB_PUSH_RETRY_BASE_SECONDS:-30}
+      PLATEOS_WEB_PUSH_RETRY_MAX_SECONDS: ${PLATEOS_WEB_PUSH_RETRY_MAX_SECONDS:-3600}
+    volumes:
+      - type: bind
+        source: ${PLATEOS_SECRETS_DIR:?set PLATEOS_SECRETS_DIR}/plateos_database_password
+        target: /run/secrets/plateos_database_password
+        read_only: true
+      - type: bind
+        source: ${PLATEOS_SECRETS_DIR:?set PLATEOS_SECRETS_DIR}/plateos_web_push_public_key
+        target: /run/secrets/plateos_web_push_public_key
+        read_only: true
+      - type: bind
+        source: ${PLATEOS_SECRETS_DIR:?set PLATEOS_SECRETS_DIR}/plateos_web_push_subscription_key
+        target: /run/secrets/plateos_web_push_subscription_key
+        read_only: true
+      - type: bind
+        source: ${PLATEOS_PUSH_PRIVATE_KEY_FILE:-/nonexistent/plateos_web_push_private_key}
+        target: /run/secrets/plateos_web_push_private_key
+        read_only: true
+      - type: bind
+        source: ${PLATEOS_SECRETS_DIR:?set PLATEOS_SECRETS_DIR}/plateos_web_push_vapid_subject
+        target: /run/secrets/plateos_web_push_vapid_subject
+        read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777,uid=10001,gid=10001
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - data
+      - push-egress
+    stop_grace_period: 30s
+    logging: *bounded-logging
+
   backup:
     profiles:
       - operations
@@ -178,6 +241,7 @@ networks:
   app:
   data:
     internal: true
+  push-egress:
 
 volumes:
   pgdata:

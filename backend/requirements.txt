@@ -8,3 +8,6 @@ pydantic-settings>=2.3
 openai>=1.35
 httpx>=0.27
 tzdata>=2025.2
+cryptography>=47,<51
+pywebpush>=2.5,<3
+py-vapid>=1.9.4,<2

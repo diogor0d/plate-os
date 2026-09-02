@@ -27,7 +27,7 @@ system rather than a stream of guesses.
 
 | | Input path | How it works |
 |---|---|---|
-| 📷 | **Barcode scan** | ZXing / BarcodeDetector → Open Food Facts lookup, cached server-side |
+| 📷 | **Barcode scan** | Accepted library first → ephemeral Open Food Facts candidate → explicit review |
 | 🏷️ | **Label photo** | Vision LLM reads the nutrition table exactly as printed |
 | 💬 | **Freeform text** | *"1.5 cans of drained tuna with 100g pasta"* → parsed by the AI coach |
 
@@ -56,8 +56,12 @@ recompute instantly, then confirm.
   nutrient trends, weekday patterns, macro share, and top contributors without
   exporting sensitive meal data to another service.
 - **AI as a constrained harness.** The coach can turn trusted context into meal
-  drafts, goal reviews, evidence callouts, and filtered Stats actions. Models
+  drafts, plan drafts, goal reviews, evidence callouts, and filtered Stats actions. Models
   never choose endpoints or write meals/goals without explicit confirmation.
+- **Plans are not meals.** Rough or product-defined routines use timezone-aware
+  schedules and occurrences; only a confirmed Proposal Card becomes intake.
+- **Private reminders.** An opt-in isolated Web Push worker sends generic text
+  from a leased outbox. Browser subscriptions are encrypted at rest.
 - **Desktop-grade UI.** A horizontal control deck, full-width work area, and
   two-column layouts on wide screens; the same installable PWA stays
   pocket-first with bottom navigation on phones.
@@ -76,12 +80,16 @@ recompute instantly, then confirm.
 └───────────────┬────────────────────────────────────┘
 ┌───────────────▼────────────────────────────────────┐
 │ api — FastAPI · nutrition math · per-task LLM      │
-│ OFF lookup+cache · scrypt accounts · SSE chat      │
+│ reviewed products · routines · scrypt · SSE chat   │
 └──────┬─────────────────────────┬───────────────────┘
 ┌──────▼──────────┐   ┌──────────▼───────────────────┐
 │ db — PostgreSQL │   │ LLM: OpenAI / Gemini /       │
 │ 17 (plain)      │   │ DeepSeek / Ollama via Settings│
 └─────────────────┘   └──────────────────────────────┘
+             │ opt-in leased outbox
+       ┌─────▼──────────────┐
+       │ Web Push worker    │
+       └────────────────────┘
 ```
 
 ## Security posture
@@ -100,7 +108,29 @@ recompute instantly, then confirm.
 > leave your host unless that endpoint points at Ollama. Settings shows
 > exactly which endpoint each task uses.
 
-## Quickstart (development)
+## Quickstart (Docker)
+
+Prerequisite: Docker with Compose.
+
+```bash
+docker compose -f docker-compose.dev.yml up --build --wait
+```
+
+What it does: builds and starts an isolated local-review stack at
+<http://127.0.0.1:8081>. Sign in with `admin` / `changeme`; test data and local
+provider settings persist across restarts.
+
+Stop it without deleting its data:
+
+```bash
+docker compose -f docker-compose.dev.yml down
+```
+
+What it does: stops the local-review containers while preserving their named
+volumes. This stack is development-only; production uses the hardened workflow
+below.
+
+## Source Development
 
 Prerequisites: Python 3.12, Node 22, any PostgreSQL 16+.
 
@@ -131,8 +161,8 @@ docker compose up --wait
 ```
 
 Services: `db` (PostgreSQL 17), `api` (FastAPI; runs migrations on boot),
-`web` (Caddy SPA + SSE proxy), plus an opt-in `backup` profile producing
-age-encrypted dumps. Production mode fails closed on weak/default credentials,
+`web` (Caddy SPA + SSE proxy), an opt-in `push` profile, and an opt-in `backup`
+profile producing age-encrypted dumps. Production mode fails closed on weak/default credentials,
 insecure cookies, and unusable database config; it serves a loopback-only
 origin behind your TLS proxy.
 
@@ -178,8 +208,8 @@ behind Cloudflare Access Service Auth, also attach the
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest    # 71 unit/contract/integrity tests
-cd frontend && npm test                      # mirrored math + offline queue
+cd backend  && .venv/bin/python -m pytest    # 184 unit/contract/integrity tests
+cd frontend && npm test                      # 43 math/domain/offline tests
 cd frontend && npm run typecheck             # strict TS
 cd frontend && npm run build                 # typecheck + build + PWA generation
 ```

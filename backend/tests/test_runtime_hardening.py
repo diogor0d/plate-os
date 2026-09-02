@@ -1,11 +1,15 @@
+import base64
 from pathlib import Path
 from typing import Any
 
 import pytest
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from pydantic_settings import SettingsConfigDict
+from py_vapid import Vapid
 
 from app.config import Settings
 from app.middleware import RequestBodyLimitMiddleware
@@ -55,6 +59,48 @@ def test_production_settings_accept_strong_values() -> None:
     settings = production_settings()
     assert settings.environment == "production"
     assert settings.cookie_secure is True
+
+
+def test_production_worker_requires_push_but_not_api_secrets() -> None:
+    key = Fernet.generate_key().decode()
+    vapid = Vapid()
+    vapid.generate_keys()
+    private_key = vapid.private_pem().decode()
+    public_key = base64.urlsafe_b64encode(
+        vapid.public_key.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+    ).rstrip(b"=").decode()
+    settings = production_settings(
+        process_role="worker",
+        app_password="changeme",
+        session_secret="changeme",
+        cookie_secure=False,
+        web_push_public_key=public_key,
+        web_push_private_key=private_key,
+        web_push_subscription_key=key,
+        web_push_vapid_subject="mailto:operator@example.test",
+    )
+    assert settings.process_role == "worker"
+
+    with pytest.raises(ValidationError, match="requires all Web Push settings"):
+        production_settings(
+            process_role="worker",
+            app_password="changeme",
+            session_secret="changeme",
+            cookie_secure=False,
+        )
+
+
+def test_push_settings_reject_partial_or_invalid_storage_keys() -> None:
+    with pytest.raises(ValidationError, match="configured together"):
+        Settings(web_push_public_key="public-key", _env_file=None)
+    with pytest.raises(ValidationError, match="valid Fernet key"):
+        Settings(
+            web_push_public_key="public-key",
+            web_push_subscription_key="not-a-fernet-key",
+            _env_file=None,
+        )
+    with pytest.raises(ValidationError, match="exceed the request timeout"):
+        Settings(web_push_lease_seconds=15, web_push_request_timeout_seconds=15, _env_file=None)
 
 
 def test_production_settings_load_prefixed_secret_files(tmp_path: Path) -> None:
@@ -127,7 +173,7 @@ async def test_readiness_checks_database_schema_and_single_profile(
     monkeypatch.setattr(main_module, "SessionLocal", lambda: session)
 
     assert await main_module.ready() == {"status": "ready"}
-    assert session.calls == 3
+    assert session.calls == 7
 
 
 @pytest.mark.asyncio

@@ -1,39 +1,56 @@
-# Production dependency lock resolved for Python 3.12 on 2026-08-25.
+# Production dependency lock resolved for Python 3.12 on 2026-09-02.
 # Update intentionally from requirements.txt, then verify tests and image builds.
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.3
+aiosignal==1.4.0
 alembic==1.19.1
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.14.2
 asyncpg==0.31.0
+attrs==26.1.0
 certifi==2026.7.22
-click==8.4.2
-colorama==0.4.6; sys_platform == "win32"
+cffi==2.1.1; platform_python_implementation != "PyPy"
+charset-normalizer==3.5.1
+click==8.5.0
+cryptography==50.0.1
 fastapi==0.141.1
+frozenlist==1.8.0
 greenlet==3.5.5
 h11==0.16.0
+http-ece==1.2.1
 httpcore==1.0.9
-httpcore2==2.12.0
+httpcore2==2.12.0; sys_platform != "emscripten"
 httptools==0.8.0
 httpx==0.28.1
 httpx2==2.12.0
+httpx2-jsfetch==1.0; sys_platform == "emscripten"
 idna==3.19
 jiter==0.16.0
 Mako==1.4.1
 MarkupSafe==3.0.3
-openai==3.3.1
-pydantic==2.13.4
+multidict==6.7.1
+openai==3.7.0
+propcache==0.5.2
+py-vapid==1.9.4
+pycparser==3.0; implementation_name != "PyPy" and platform_python_implementation != "PyPy"
+pydantic==2.13.5
 pydantic-settings==2.15.0
-pydantic_core==2.46.4
+pydantic_core==2.46.5
 python-dotenv==1.2.3
+pywebpush==2.5.0
 PyYAML==6.0.3
+requests==2.34.2
 sniffio==1.3.1
 SQLAlchemy==2.0.52
 starlette==1.6.0
-truststore==0.10.4
+truststore==0.10.4; sys_platform != "emscripten"
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 tzdata==2026.3
+urllib3==2.7.0
 uvicorn[standard]==0.52.4
-uvloop==0.22.1; sys_platform != "win32"
+uvloop==0.22.1; platform_python_implementation != "PyPy" and sys_platform != "cygwin" and sys_platform != "win32"
 watchfiles==1.2.0
-websockets==17.0.1
+websockets==17.1
+yarl==1.24.5

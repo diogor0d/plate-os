@@ -5,13 +5,18 @@
  * deterministic mirror of the backend's math).
  */
 import { useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Minus, Plus, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { api } from "../lib/api";
 import { canonicalizePer100, scaleToQuantity, sumTotals } from "../lib/nutrition";
-import type { MealLogCreate, Per100, SourceType } from "../lib/types";
-import { enqueueMealLog, shouldQueueMealLogError } from "../lib/offline/db";
+import type { MealLogCreate, MeInfo, Per100, SourceType } from "../lib/types";
+import {
+  enqueueMealLog,
+  flushOccurrenceCompletionAttempts,
+  recordOccurrenceCompletionAttempt,
+  shouldQueueMealLogError,
+} from "../lib/offline/db";
 
 export interface ProposalCardItem {
   name: string;
@@ -26,16 +31,24 @@ export interface ProposalCardItem {
 export function ProposalCard({
   items,
   onDone,
+  durableOccurrenceId,
 }: {
   items: ProposalCardItem[];
   onDone: () => void;
+  durableOccurrenceId?: string;
 }) {
   const qc = useQueryClient();
+  const me = useQuery({
+    queryKey: ["me"],
+    queryFn: () => api<MeInfo>("/api/auth/me"),
+    retry: false,
+  });
   const [quantities, setQuantities] = useState<number[]>(() => items.map((i) => i.quantityG));
   const [completed, setCompleted] = useState<Set<number>>(() => new Set());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mutationIds = useRef(items.map(() => crypto.randomUUID()));
+  const completionMutationId = useRef(crypto.randomUUID());
   const confirmedAt = useRef<string | null>(null);
 
   const totals = useMemo(
@@ -68,6 +81,11 @@ export function ProposalCard({
     }
     setSaving(true);
     setError(null);
+    if (!me.data?.id) {
+      setError("Sign in again before confirming this meal.");
+      setSaving(false);
+      return;
+    }
     confirmedAt.current ??= new Date().toISOString();
     const nextCompleted = new Set(completed);
     let madeProgress = false;
@@ -81,6 +99,20 @@ export function ProposalCard({
         per100: item.foodItemId ? null : canonicalizePer100(item.per100),
         source_type: item.sourceType,
       }));
+      if (durableOccurrenceId) {
+        await recordOccurrenceCompletionAttempt(me.data.id, {
+          id: completionMutationId.current,
+          occurrenceId: durableOccurrenceId,
+          mealPayloads: payloads,
+          confirmedAt: confirmedAt.current,
+          completionMutationId: completionMutationId.current,
+        });
+        setCompleted(new Set(payloads.map((_, idx) => idx)));
+        if (navigator.onLine) await flushOccurrenceCompletionAttempts(me.data.id);
+        await qc.invalidateQueries();
+        onDone();
+        return;
+      }
       for (const [idx, payload] of payloads.entries()) {
         if (nextCompleted.has(idx)) continue;
         if (navigator.onLine) {
@@ -88,10 +120,10 @@ export function ProposalCard({
             await api("/api/meal-logs", { method: "POST", body: JSON.stringify(payload) });
           } catch (err) {
             if (!shouldQueueMealLogError(err)) throw err;
-            await enqueueMealLog(payload);
+            await enqueueMealLog(me.data.id, payload);
           }
         } else {
-          await enqueueMealLog(payload);
+          await enqueueMealLog(me.data.id, payload);
         }
         nextCompleted.add(idx);
         madeProgress = true;

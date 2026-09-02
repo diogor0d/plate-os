@@ -10,6 +10,7 @@ from app.api.routes.meals import (
     _replay_mutation,
     _request_fingerprint,
     create_meal_log,
+    delete_meal_log,
     update_meal_log,
 )
 from app.models import FoodItem, MealLog, MealLogMutation, UserProfile
@@ -113,6 +114,19 @@ class ReplaySession:
         return None
 
 
+class DeleteSession:
+    def __init__(self, linked_occurrence_id: uuid.UUID | None):
+        self.linked_occurrence_id = linked_occurrence_id
+        self.execute_called = False
+
+    async def scalar(self, _statement):
+        return self.linked_occurrence_id
+
+    async def execute(self, _statement):
+        self.execute_called = True
+        raise AssertionError("linked meal must not reach DELETE")
+
+
 @pytest.mark.asyncio
 async def test_replay_returns_original_log_for_matching_fingerprint():
     user_id = uuid.uuid4()
@@ -176,7 +190,7 @@ async def test_create_preserves_valid_legacy_food_density():
         carbs_per_100=Decimal("0"),
         fat_per_100=Decimal("0"),
         fiber_per_100=Decimal("0"),
-        is_verified=True,
+        accepted_at=datetime.now(UTC),
     )
     session = CreateSession(item)
     created = await create_meal_log(
@@ -191,6 +205,81 @@ async def test_create_preserves_valid_legacy_food_density():
     )
     assert float(created.calculated_protein) == 100.0
     assert created.protein_per_100 == Decimal("100.01")
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_archived_product():
+    item = FoodItem(id=uuid.uuid4(), archived_at=datetime.now(UTC), accepted_at=datetime.now(UTC))
+    with pytest.raises(HTTPException, match="Archived products") as exc_info:
+        await create_meal_log(
+            meal_request(food_item_id=item.id, per100=None),
+            UserProfile(id=uuid.uuid4()),
+            CreateSession(item),  # type: ignore[arg-type]
+        )
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_delete_linked_meal_returns_conflict_before_foreign_key_failure():
+    session = DeleteSession(uuid.uuid4())
+    with pytest.raises(HTTPException, match="linked to a routine occurrence") as exc_info:
+        await delete_meal_log(
+            uuid.uuid4(), UserProfile(id=uuid.uuid4()), session  # type: ignore[arg-type]
+        )
+    assert exc_info.value.status_code == 409
+    assert not session.execute_called
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_mismatched_expected_owner_before_writing():
+    authenticated_user_id = uuid.uuid4()
+    queued_owner_id = uuid.uuid4()
+    session = CreateSession(
+        FoodItem(
+            id=uuid.uuid4(),
+            name="Unused",
+            serving_unit="g",
+            calories_per_100=Decimal("1"),
+            protein_per_100=Decimal("1"),
+            carbs_per_100=Decimal("1"),
+            fat_per_100=Decimal("1"),
+            fiber_per_100=Decimal("1"),
+        )
+    )
+
+    with pytest.raises(HTTPException, match="queued meal owner") as mismatch:
+        await create_meal_log(
+            meal_request(),
+            UserProfile(id=authenticated_user_id),
+            session,  # type: ignore[arg-type]
+            str(queued_owner_id),
+        )
+
+    assert mismatch.value.status_code == 409
+    assert session.added == []
+
+
+@pytest.mark.asyncio
+async def test_create_still_supports_callers_without_expected_owner():
+    user_id = uuid.uuid4()
+    session = CreateSession(
+        FoodItem(
+            id=uuid.uuid4(),
+            name="Unused",
+            serving_unit="g",
+            calories_per_100=Decimal("1"),
+            protein_per_100=Decimal("1"),
+            carbs_per_100=Decimal("1"),
+            fat_per_100=Decimal("1"),
+            fiber_per_100=Decimal("1"),
+        )
+    )
+
+    created = await create_meal_log(
+        meal_request(), UserProfile(id=user_id), session  # type: ignore[arg-type]
+    )
+
+    assert created.user_id == user_id
 
 
 @pytest.mark.asyncio

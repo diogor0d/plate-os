@@ -1,6 +1,6 @@
 import { LogOut } from "lucide-react";
 import type { ReactNode } from "react";
-import type { DailySummary, MeInfo } from "../lib/types";
+import type { MeInfo } from "../lib/types";
 import { cn } from "../lib/utils";
 import { TABS, type Tab } from "./BottomNav";
 
@@ -9,20 +9,14 @@ export function DesktopHeader({
   onTab,
   me,
   onLogout,
-  summary,
   status,
 }: {
   tab: Tab;
   onTab: (tab: Tab) => void;
   me: MeInfo | undefined;
   onLogout: () => void;
-  summary: DailySummary | undefined;
   status: ReactNode;
 }) {
-  const calorieTarget = summary?.targets.calories ?? 0;
-  const calorieProgress = calorieTarget > 0
-    ? Math.min(100, ((summary?.consumed.calories ?? 0) / calorieTarget) * 100)
-    : 0;
   const today = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
     month: "short",
@@ -89,15 +83,6 @@ export function DesktopHeader({
         </div>
       </div>
 
-      <div className="absolute inset-x-0 bottom-[-1px] h-px bg-zinc-800" aria-hidden="true">
-        <div
-          className="h-full bg-emerald-400/80 transition-[width] duration-500"
-          style={{ width: `${calorieProgress}%` }}
-        />
-      </div>
-      <span className="sr-only">
-        {Math.round(calorieProgress)} percent of today's calorie target consumed
-      </span>
     </header>
   );
 }

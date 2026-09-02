@@ -1,13 +1,17 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Sparkles } from "lucide-react";
+import { CalendarClock, Plus, Sparkles } from "lucide-react";
 import { ApiError, api } from "./lib/api";
 import type { DailySummary, MealLog, MeInfo } from "./lib/types";
 import {
+  discardOccurrenceCompletionAttempt,
   discardPendingMealLog,
+  flushOccurrenceCompletionAttempts,
   flushPendingMealLogs,
   getMealLogQueueState,
+  getOccurrenceCompletionState,
   MEAL_LOG_QUEUE_CHANGED_EVENT,
+  type OccurrenceCompletionAttempt,
   type PendingMealLog,
 } from "./lib/offline/db";
 import { TargetBars } from "./components/TargetBars";
@@ -19,12 +23,16 @@ import { DesktopHeader } from "./components/DesktopHeader";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import type { AnalyticsIntent, AssistantLaunch, AssistantMode } from "./lib/assistant";
+import { formatCountdown, useAgenda, type RoutineMealProposal } from "./lib/routines";
+import { ProposalCard } from "./components/ProposalCard";
+import { revokeWebPushForLogout } from "./lib/push";
 
 // Code-split: keeps ZXing (camera pipeline), Recharts (charts) and the admin
 // settings surface out of the initial bundle — all load on demand.
 const ScanSheet = lazy(() => import("./components/ScanSheet").then((m) => ({ default: m.ScanSheet })));
 const Analytics = lazy(() => import("./components/Analytics").then((m) => ({ default: m.Analytics })));
 const SettingsView = lazy(() => import("./components/Settings").then((m) => ({ default: m.SettingsView })));
+const Routines = lazy(() => import("./components/Routines"));
 
 function LoginGate() {
   const qc = useQueryClient();
@@ -39,7 +47,6 @@ function LoginGate() {
         method: "POST",
         body: JSON.stringify({ username: username.trim(), password }),
       });
-      await flushPendingMealLogs();
       qc.clear();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -81,6 +88,7 @@ function LoginGate() {
 const PAGE_TITLES: Record<Tab, string> = {
   today: "Today",
   scan: "Scan",
+  plan: "Plan",
   coach: "Coach",
   stats: "Stats",
   settings: "Settings",
@@ -89,6 +97,7 @@ const PAGE_TITLES: Record<Tab, string> = {
 const PAGE_DESCRIPTIONS: Record<Tab, string> = {
   today: "Your intake, targets, and confirmed meals for the day.",
   scan: "Capture a barcode or nutrition label and review before logging.",
+  plan: "Build reusable meals, schedule them, and review upcoming occurrences.",
   coach: "Describe a meal naturally, then verify the coach's proposal.",
   stats: "Review recent intake patterns against your current targets.",
   settings: "Manage your account, household, and connected providers.",
@@ -98,13 +107,16 @@ const TEXT_EYEBROW = "text-[10px] font-medium uppercase tracking-[0.14em] text-z
 
 export default function App() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>("today");
+  const [tab, setTab] = useState<Tab>(() => window.location.pathname === "/plan" ? "plan" : "today");
   const [showManual, setShowManual] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
   const [queuedCount, setQueuedCount] = useState(0);
   const [failedQueue, setFailedQueue] = useState<PendingMealLog[]>([]);
+  const [pendingOccurrences, setPendingOccurrences] = useState(0);
+  const [failedOccurrences, setFailedOccurrences] = useState<OccurrenceCompletionAttempt[]>([]);
   const [assistantLaunch, setAssistantLaunch] = useState<AssistantLaunch | null>(null);
   const [analyticsIntent, setAnalyticsIntent] = useState<AnalyticsIntent | null>(null);
+  const [routineProposal, setRoutineProposal] = useState<RoutineMealProposal | null>(null);
 
   const me = useQuery({
     queryKey: ["me"],
@@ -113,7 +125,10 @@ export default function App() {
   });
 
   const logout = useMutation({
-    mutationFn: () => api("/api/auth/logout", { method: "POST" }),
+    mutationFn: async () => {
+      if (me.data?.id) await revokeWebPushForLogout(me.data.id);
+      return api("/api/auth/logout", { method: "POST" });
+    },
     onSuccess: () => qc.clear(),
   });
 
@@ -128,18 +143,38 @@ export default function App() {
     queryFn: () => api<MealLog[]>("/api/meal-logs"),
     retry: false,
   });
+  const agenda = useAgenda({ days: 7 });
 
   // Offline queue: flush on mount and whenever connectivity returns.
   useEffect(() => {
+    const accountId = me.data?.id;
+    if (!accountId) {
+      setQueuedCount(0);
+      setFailedQueue([]);
+      setPendingOccurrences(0);
+      setFailedOccurrences([]);
+      return;
+    }
+    let active = true;
     const refreshQueue = () => {
-      void getMealLogQueueState().then((state) => {
-        setQueuedCount(state.pending);
-        setFailedQueue(state.failed);
+      void Promise.all([
+        getMealLogQueueState(accountId),
+        getOccurrenceCompletionState(accountId),
+      ]).then(([mealState, occurrenceState]) => {
+        if (!active) return;
+        setQueuedCount(mealState.pending);
+        setFailedQueue(mealState.failed);
+        setPendingOccurrences(occurrenceState.pending);
+        setFailedOccurrences(occurrenceState.failed);
       });
     };
     const flush = () => {
-      void flushPendingMealLogs().then((n) => {
-        if (n > 0) void qc.invalidateQueries();
+      void Promise.all([
+        flushPendingMealLogs(accountId),
+        flushOccurrenceCompletionAttempts(accountId),
+      ]).then(([mealCount, occurrenceCount]) => {
+        if (!active) return;
+        if (mealCount + occurrenceCount > 0) void qc.invalidateQueries();
         refreshQueue();
       });
     };
@@ -161,13 +196,14 @@ export default function App() {
     window.addEventListener(MEAL_LOG_QUEUE_CHANGED_EVENT, refreshQueue);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
+      active = false;
       window.clearInterval(retryTimer);
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
       window.removeEventListener(MEAL_LOG_QUEUE_CHANGED_EVENT, refreshQueue);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [qc]);
+  }, [me.data?.id, qc]);
 
   const deleteLog = async (id: string) => {
     await api(`/api/meal-logs/${id}`, { method: "DELETE" });
@@ -192,14 +228,18 @@ export default function App() {
   if (summary.error instanceof ApiError && summary.error.status === 401) return <LoginGate />;
 
   const statusLine =
-    failedQueue.length > 0 ? (
-      <span className={failedQueue.length ? "text-xs text-red-400" : "text-xs text-amber-500"}>
-        {`${failedQueue.length} queued log${failedQueue.length === 1 ? "" : "s"} need attention`}
+    failedQueue.length + failedOccurrences.length > 0 ? (
+      <span className="text-xs text-red-400">
+        {`${failedQueue.length + failedOccurrences.length} queued action${failedQueue.length + failedOccurrences.length === 1 ? "" : "s"} need attention`}
       </span>
-    ) : queuedCount > 0 ? (
-      <span className="text-xs text-amber-500">{`${queuedCount} log${queuedCount === 1 ? "" : "s"} queued`}</span>
+    ) : queuedCount + pendingOccurrences > 0 ? (
+      <span className="text-xs text-amber-500">{`${queuedCount + pendingOccurrences} action${queuedCount + pendingOccurrences === 1 ? "" : "s"} queued`}</span>
     ) : !online ? (
       <span className="text-xs text-amber-500">offline - logging will queue</span>
+    ) : agenda.data?.countdown_seconds !== null && agenda.data?.countdown_seconds !== undefined ? (
+      <button type="button" className="text-xs text-emerald-400" onClick={() => setTab("plan")}>
+        Next meal {formatCountdown(agenda.data.countdown_seconds)}
+      </button>
     ) : null;
 
   return (
@@ -209,7 +249,6 @@ export default function App() {
         onTab={setTab}
         me={me.data}
         onLogout={() => logout.mutate()}
-        summary={summary.data}
         status={statusLine}
       />
 
@@ -245,10 +284,35 @@ export default function App() {
                   <p className="text-zinc-500">{item.lastError ?? "The server rejected this log."}</p>
                 </div>
                 {item.id !== undefined && (
-                  <Button variant="ghost" size="sm" onClick={() => void discardPendingMealLog(item.id!)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void discardPendingMealLog(me.data!.id, item.id!)}
+                  >
                     Discard
                   </Button>
                 )}
+              </div>
+            ))}
+          </Card>
+        )}
+
+        {failedOccurrences.length > 0 && (
+          <Card className="mb-4 space-y-2 border-red-900/60">
+            <h2 className="text-sm font-semibold text-red-300">Planned meals needing attention</h2>
+            {failedOccurrences.map((attempt) => (
+              <div key={attempt.id} className="flex items-start justify-between gap-3 text-xs">
+                <div>
+                  <p className="text-zinc-200">Occurrence completion</p>
+                  <p className="text-zinc-500">{attempt.lastError ?? "The server rejected this action."}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void discardOccurrenceCompletionAttempt(me.data!.id, attempt.id)}
+                >
+                  Discard
+                </Button>
               </div>
             ))}
           </Card>
@@ -258,6 +322,20 @@ export default function App() {
           {tab === "today" && (
             <section className="space-y-2 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-10 lg:space-y-0">
               <div className="space-y-2">
+                {agenda.data?.occurrences[0] && (
+                  <button
+                    type="button"
+                    onClick={() => setTab("plan")}
+                    className="flex w-full items-center gap-3 rounded-xl border border-emerald-950 bg-emerald-950/10 p-3 text-left"
+                  >
+                    <CalendarClock className="h-4 w-4 text-emerald-400" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500">Next planned meal</span>
+                      <span className="block truncate text-sm text-zinc-200">{agenda.data.occurrences[0].routine.title}</span>
+                    </span>
+                    <span className="text-xs text-emerald-400">{formatCountdown(agenda.data.countdown_seconds)}</span>
+                  </button>
+                )}
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-medium text-zinc-400 md:hidden lg:block">Today's logs</h2>
                   <div className="flex gap-2">
@@ -290,6 +368,28 @@ export default function App() {
           {tab === "scan" && (
             <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-zinc-900" />}>
               <ScanSheet onClose={() => setTab("today")} />
+            </Suspense>
+          )}
+          {tab === "plan" && (
+            <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-zinc-900" />}>
+              <div className="space-y-4">
+                {routineProposal && (
+                  <ProposalCard
+                    items={routineProposal.items}
+                    durableOccurrenceId={routineProposal.occurrence.id}
+                    onDone={() => setRoutineProposal(null)}
+                  />
+                )}
+                <Routines
+                  timezone={summary.data?.timezone}
+                  onLogMeal={setRoutineProposal}
+                  onUseRoughRoutine={(routine) => launchAssistant(
+                    `Turn this rough meal routine into a concrete proposal for today: ${routine.title}. ${routine.rough_text ?? ""}`,
+                    "coach",
+                    "today",
+                  )}
+                />
+              </div>
             </Suspense>
           )}
           <div className={tab === "coach" ? "block" : "hidden"}>

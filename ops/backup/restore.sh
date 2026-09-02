@@ -116,7 +116,7 @@ fi
 revision="$(psql --no-psqlrc --tuples-only --no-align --command='SELECT version_num FROM alembic_version')"
 profile_count="$(psql --no-psqlrc --tuples-only --no-align --command='SELECT count(*) FROM user_profile')"
 case "$revision" in
-    0001|0002|0003) ;;
+    0001|0002|0003|0004|0005) ;;
     *)
         echo "Restored schema revision is unsupported" >&2
         exit 1

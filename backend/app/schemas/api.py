@@ -31,6 +31,7 @@ class LoginRequest(BaseModel):
 
 
 class MeOut(BaseModel):
+    id: uuid.UUID
     username: str
     is_admin: bool
 
@@ -120,17 +121,23 @@ class FoodItemOut(BaseModel):
     carbs_per_100: float
     fat_per_100: float
     fiber_per_100: float
-    is_verified: bool
+    nutrition_source: Literal["manual", "open_food_facts", "vision_label"]
+    accepted_at: datetime
+    updated_at: datetime
+    version: int
+    archived_at: datetime | None
 
 
 class FoodItemCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
+    client_mutation_id: uuid.UUID
     barcode: str | None = Field(default=None, min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=255)
     brand: str | None = Field(default=None, max_length=255)
     serving_unit: str = Field(default="g", min_length=1, max_length=32)
     per100: Per100Values
+    nutrition_source: Literal["manual", "open_food_facts", "vision_label"] = "manual"
 
 
 class MealLogCreate(BaseModel):

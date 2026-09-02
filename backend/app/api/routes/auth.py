@@ -65,7 +65,7 @@ async def login(
 
 @router.get("/me", response_model=MeOut)
 async def me(profile: UserProfile = Depends(get_current_profile)):
-    return MeOut(username=profile.username or "unknown", is_admin=profile.is_admin)
+    return MeOut(id=profile.id, username=profile.username or "unknown", is_admin=profile.is_admin)
 
 
 @router.post("/logout")

@@ -69,4 +69,44 @@ describe("assistant harness parser", () => {
       caveats: ["x".repeat(301)],
     })).toBeNull();
   });
+
+  it("accepts a confirmed rough meal-plan draft with a bounded schedule", () => {
+    expect(parseAssistantBlock({
+      type: "meal_plan_draft",
+      title: "Weekday lunch",
+      rough_text: "A protein, whole grain, and two vegetables.",
+      schedule: {
+        local_time: "12:30",
+        timezone: "Europe/Lisbon",
+        frequency: "weekly",
+        interval: 1,
+        iso_weekdays: [1, 3, 5],
+        start_date: "2026-09-07",
+        end_date: null,
+        reminder_minutes: 30,
+      },
+      requires_user_confirmation: true,
+    })).toMatchObject({ type: "meal_plan_draft", schedule: { iso_weekdays: [1, 3, 5] } });
+  });
+
+  it("rejects unsafe meal-plan confirmation, recurrence, dates, and timezone", () => {
+    const schedule = {
+      local_time: "12:30",
+      timezone: "Europe/Lisbon",
+      frequency: "weekly",
+      interval: 1,
+      iso_weekdays: [1],
+      start_date: "2026-09-07",
+      end_date: null,
+      reminder_minutes: null,
+    };
+    const draft = { type: "meal_plan_draft", title: "Lunch", rough_text: "A balanced lunch.", schedule, requires_user_confirmation: true };
+    expect(parseAssistantBlock({ ...draft, requires_user_confirmation: false })).toBeNull();
+    expect(parseAssistantBlock({ ...draft, schedule: { ...schedule, frequency: "daily" } })).toBeNull();
+    expect(parseAssistantBlock({ ...draft, schedule: { ...schedule, start_date: "2026-02-30" } })).toBeNull();
+    expect(parseAssistantBlock({ ...draft, schedule: { ...schedule, timezone: "Not/AZone" } })).toBeNull();
+    expect(parseAssistantBlock({ ...draft, schedule: { ...schedule, interval: 5 } })).toBeNull();
+    expect(parseAssistantBlock({ ...draft, schedule: { ...schedule, reminder_minutes: 1441 } })).toBeNull();
+    expect(parseAssistantBlock({ ...draft, action: { method: "POST", url: "/api/routines" } })).toBeNull();
+  });
 });

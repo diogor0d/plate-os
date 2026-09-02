@@ -27,3 +27,153 @@ button,
   touch-action: manipulation;
   user-select: none;
 }
+
+/* Coach motion language: one deliberate pulse system, not scattered effects. */
+.coach-mark {
+  position: relative;
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(39 39 42);
+  border-radius: 0.65rem;
+  background: rgb(9 9 11);
+  color: rgb(52 211 153);
+}
+
+.coach-mark-orbit {
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgb(16 185 129 / 0.18);
+  border-radius: 0.45rem;
+}
+
+.coach-mark-active .coach-mark-orbit {
+  animation: coach-orbit-pulse 1.8s ease-in-out infinite;
+}
+
+.coach-message-user {
+  animation: coach-message-user-in 260ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.coach-message-assistant {
+  animation: coach-message-assistant-in 320ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.coach-thinking {
+  display: flex;
+  min-height: 3.25rem;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.coach-thinking-trace {
+  display: flex;
+  height: 1.5rem;
+  align-items: center;
+  gap: 3px;
+}
+
+.coach-thinking-trace span {
+  display: block;
+  width: 3px;
+  border-radius: 999px;
+  background: rgb(52 211 153);
+  animation: coach-trace 1.1s ease-in-out infinite;
+}
+
+.coach-thinking-trace span:nth-child(1) { height: 0.35rem; animation-delay: -0.3s; }
+.coach-thinking-trace span:nth-child(2) { height: 0.8rem; animation-delay: -0.15s; }
+.coach-thinking-trace span:nth-child(3) { height: 1.3rem; }
+.coach-thinking-trace span:nth-child(4) { height: 0.55rem; animation-delay: 0.15s; }
+
+.coach-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: -0.12em;
+  border-radius: 999px;
+  background: rgb(52 211 153);
+  animation: coach-caret-blink 0.9s steps(2, start) infinite;
+}
+
+.coach-composer {
+  bottom: var(--coach-mobile-nav-offset, 4rem);
+}
+
+.coach-status-pulse {
+  animation: coach-status-pulse 1.5s ease-in-out infinite;
+}
+
+.coach-spin {
+  animation: coach-spin 0.9s linear infinite;
+}
+
+.coach-block-enter,
+.coach-context-chip {
+  animation: coach-block-in 300ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+@keyframes coach-orbit-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.88); }
+  50% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 4px rgb(16 185 129 / 0.06); }
+}
+
+@keyframes coach-trace {
+  0%, 100% { opacity: 0.3; transform: scaleY(0.55); }
+  50% { opacity: 1; transform: scaleY(1); }
+}
+
+@keyframes coach-caret-blink {
+  50% { opacity: 0; }
+}
+
+@keyframes coach-status-pulse {
+  50% { opacity: 0.3; box-shadow: 0 0 0 3px rgb(52 211 153 / 0.08); }
+}
+
+@keyframes coach-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes coach-message-user-in {
+  from { opacity: 0; transform: translateY(7px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes coach-message-assistant-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes coach-block-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (min-width: 768px) {
+  .coach-composer {
+    bottom: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coach-mark-active .coach-mark-orbit,
+  .coach-thinking-trace span,
+  .coach-caret,
+  .coach-status-pulse,
+  .coach-spin,
+  .coach-message-user,
+  .coach-message-assistant,
+  .coach-block-enter,
+  .coach-context-chip {
+    animation: none;
+  }
+
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+}

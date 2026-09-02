@@ -9,16 +9,17 @@ import hashlib
 import json
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_profile
 from app.db import get_session
-from app.models import FoodItem, MealLog, MealLogMutation, UserProfile
+from app.models import FoodItem, MealLog, MealLogMutation, MealOccurrenceLog, UserProfile
 from app.schemas.api import DailySummary, MealLogCreate, MealLogOut, MealLogPatch
 from app.services.nutrition import (
     MACRO_FIELDS,
@@ -119,9 +120,18 @@ async def create_meal_log(
     body: MealLogCreate,
     profile: UserProfile = Depends(get_current_profile),
     session: AsyncSession = Depends(get_session),
+    expected_owner_user_id: Annotated[
+        str | None, Header(alias="X-PlateOS-Expected-User-ID")
+    ] = None,
 ):
     """Persist a (confirmed) meal entry. Totals are computed HERE from the
     per-100g density; client-sent totals are never accepted."""
+
+    if expected_owner_user_id is not None and expected_owner_user_id != str(profile.id):
+        raise HTTPException(
+            status_code=409,
+            detail="Authenticated account does not match queued meal owner",
+        )
 
     fingerprint: str | None = None
     if body.client_mutation_id is not None:
@@ -139,6 +149,8 @@ async def create_meal_log(
         item = await session.get(FoodItem, body.food_item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="food_item not found")
+        if item.archived_at is not None or item.accepted_at is None:
+            raise HTTPException(status_code=409, detail="Archived products cannot be logged")
         density = {
             "calories": item.calories_per_100,
             "protein_g": item.protein_per_100,
@@ -247,12 +259,26 @@ async def delete_meal_log(
     profile: UserProfile = Depends(get_current_profile),
     session: AsyncSession = Depends(get_session),
 ):
-    result = await session.execute(
-        delete(MealLog).where(MealLog.id == log_id, MealLog.user_id == profile.id)
+    linked = await session.scalar(
+        select(MealOccurrenceLog.occurrence_id).where(
+            MealOccurrenceLog.meal_log_id == log_id,
+            MealOccurrenceLog.user_id == profile.id,
+        )
     )
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="meal log not found")
-    await session.commit()
+    if linked is not None:
+        raise HTTPException(status_code=409, detail="Meal log is linked to a routine occurrence")
+    try:
+        result = await session.execute(
+            delete(MealLog).where(MealLog.id == log_id, MealLog.user_id == profile.id)
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="meal log not found")
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=409, detail="Meal log is linked to a routine occurrence"
+        ) from None
 
 
 @router.get("/daily-summary", response_model=DailySummary)

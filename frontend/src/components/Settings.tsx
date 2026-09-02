@@ -15,6 +15,7 @@ import type {
 } from "../lib/types";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
+import { PushSettings } from "./PushSettings";
 
 interface Preset {
   id: string;
@@ -432,6 +433,7 @@ export function SettingsView() {
   return (
     <section className="mx-auto max-w-xl space-y-4 lg:max-w-2xl">
       <AccountCard />
+      {me.data && <PushSettings accountId={me.data.id} />}
 
       {isAdmin ? (
         <>

@@ -1,19 +1,19 @@
 # AGENTS.md — PlateOS Context for Agents
 
-**Last updated:** 2026-08-25 (Europe/Lisbon)
+**Last updated:** 2026-09-02 (Europe/Lisbon)
 **Maintainer rule:** any agent (or human) that changes the architecture, stack, schema, conventions, or completes a roadmap phase MUST (a) update this file in the same change and (b) record the reasoning in a new dated file under `docs/decisions/`. Never rewrite decision history — supersede it.
 
 ---
 
 ## 1. What PlateOS is
 
-PlateOS is a **mobile-first, self-hosted PWA for daily nutrition tracking and body recomposition**, built for a single operator (household accounts since D36) on an iOS-first device. It removes tracking friction with three input paths:
+PlateOS is a **mobile-first, self-hosted PWA for daily nutrition tracking and body recomposition**, built for household accounts on an iOS-first device. It removes tracking friction with three input paths:
 
-1. **Barcode scan** → Open Food Facts lookup (server-cached in Postgres)
+1. **Barcode scan** → accepted library lookup, then an ephemeral Open Food Facts candidate
 2. **Label photo** → Vision LLM extracts the nutrition table
 3. **Freeform text** → conversational AI coach parses the meal ("1.5 cans of drained tuna with 100g pasta")
 
-Everything funnels through an **editable Proposal Card** that the user confirms before anything touches the database.
+Every meal acquisition path funnels through an **editable Proposal Card** before a meal log is persisted.
 
 **User & hosting context:** homelab deployment, Docker-only on servers (decision D17), TLS terminates at an existing reverse proxy, and the origin is loopback-only (D31). Privacy matters: the LLM backend is env-swappable so inference can stay fully local via Ollama.
 
@@ -25,7 +25,7 @@ These are product laws, not preferences. If a change violates one, stop and reco
 2. **Zero silent database mutations.** Vision parsing and chat return *proposals* only (`LogProposalResponse`). Persistence happens exclusively via explicit `POST /api/meal-logs` after user confirmation (the Proposal Card). Never add a code path where an LLM response writes to `meal_logs` directly.
 3. **Client-side image downscaling.** Every image is canvas-downscaled to ≤1280px longest edge, WebP (JPEG fallback) q=0.7 (~150KB) in `frontend/src/lib/image.ts` before hitting the network. Label capture uses `<input type="file" capture="environment">` for focus quality on small text.
 4. **Offline-first.** Every confirmed meal gets a client UUID and confirmation timestamp before its first POST. Retryable failures queue in IndexedDB (Dexie) and replay idempotently; permanent queued 4xx failures remain visible for explicit discard instead of being silently deleted. The SPA shell precaches via Workbox. New features must not assume connectivity.
-5. **Server-side = containers only.** Anything that runs on a server runs in Docker (runtime services: `db`, `api`, `web`; opt-in backup/restore jobs are containers too). Dev tooling (venv, node) lives on workstations only.
+5. **Server-side = containers only.** Anything that runs on a server runs in Docker (runtime services: `db`, `api`, `web`; the push worker and backup/restore jobs are opt-in containers). Dev tooling (venv, node) lives on workstations only.
 6. **Timezone-correct rollups.** Daily budgets group by the user's local midnight (`user_profile.timezone`, IANA, via `zoneinfo`), never UTC `date_trunc`. All new aggregation code must use `day_bounds()` in `backend/app/api/routes/meals.py`.
 7. **Production fails closed.** Compose forces production mode, file-injected strong secrets, Secure cookies, DB-backed readiness, and a loopback-only origin. Never weaken these to make deployment convenient; keep workstation defaults in development mode instead (D29-D31).
 
@@ -51,6 +51,10 @@ These are product laws, not preferences. If a change violates one, stop and reco
 │ db — Postgres 17│    │ LLM: OpenAI / Gemini-compat │
 │ (no Timescale)  │    │ / Ollama — env-selected     │
 └─────────────────┘    └─────────────────────────────┘
+          │
+┌─────────▼──────────────────────────────────────────┐
+│ opt-in push worker — leased Web Push outbox (D41) │
+└────────────────────────────────────────────────────┘
 ```
 
 Production hardcodes `web` to IPv4 loopback with only the port configurable. `db` is
@@ -78,7 +82,8 @@ and restore drills use a separate internal-only Compose project (D31-D33).
 ```
 plate-os/
 ├── AGENTS.md                  ← you are here; keep updated
-├── docker-compose.yml         ← hardened db + api + web; opt-in backup profile
+├── docker-compose.yml         ← hardened db + api + web; opt-in push/backup profiles
+├── docker-compose.dev.yml     ← isolated one-command workstation review stack
 ├── docker-compose.restore.yml ← isolated restore + API verification project
 ├── .env.example               ← all PLATEOS_* vars documented
 ├── docs/decisions/            ← dated, immutable decision records (ADR-style)
@@ -91,17 +96,19 @@ plate-os/
 │   │   ├── config.py          ← env + /run/secrets; fail-closed production mode
 │   │   ├── db.py              ← async engine + session dependency
 │   │   ├── middleware.py      ← streaming-safe 2 MB request-body limit
-│   │   ├── models.py          ← SQLAlchemy 2.0 typed models (5 tables)
+│   │   ├── models.py          ← SQLAlchemy 2.0 typed models (16 tables)
 │   │   ├── schemas/           ← llm_contracts.py (LLM I/O) · api.py (DTOs)
 │   │   ├── api/
 │   │   │   ├── deps.py        ← cookie auth + profile dependency
-│   │   │   └── routes/        ← auth · profile · food · meals · vision · chat
+│   │   │   └── routes/        ← auth · profile · products · meals · routines · push · AI
 │   │   └── services/
 │   │       ├── nutrition.py   ← ALL macro math (server side)
 │   │       ├── runtime_settings.py ← Settings-screen provider state (file-backed)
 │   │       ├── llm.py         ← OpenAI-compatible gateway, per-task routing
-│   │       └── openfoodfacts.py
-│   ├── alembic/               ← env.py (async) + revisions 0001/0002
+│   │       ├── openfoodfacts.py
+│   │       ├── routines.py
+│   │       └── web_push.py
+│   ├── alembic/               ← env.py (async) + revisions 0001-0005
 │   ├── tests/                 ← math, validation, auth, LLM, integrity, runtime tests
 │   ├── Dockerfile             ← pinned non-root image; migrations then uvicorn
 │   ├── requirements.lock      ← exact production dependency resolution
@@ -122,7 +129,8 @@ plate-os/
         └── components/        ├── ui/ (Button, Card) · TargetBars · MealList
                                 · ProposalCard · ScanSheet (lazy) · Assistant
                                 · Analytics (lazy, Recharts) · AssistantBlocks
-                                · GoalChangeReview · ManualEntry
+                                · GoalChangeReview · ProductLibrary · Routines
+                                · PushSettings · ManualEntry
                                 · DesktopHeader (md+) · BottomNav (mobile only)
 ```
 
@@ -133,16 +141,18 @@ plate-os/
 | `POST /auth/login` · `POST /auth/logout` | username-aware cookie session; password-only allowed while one account exists |
 | `GET /auth/me` · `GET/POST /users`, `PATCH /users/me/password`, `PATCH /users/{id}/password` | account identity; admin-only household management + local resets (D36) |
 | `GET/PUT /profile` | targets, anthropometrics, timezone |
-| `GET/POST /food-items`, `GET /food-items/barcode/{code}` | library + OFF cache-aside |
+| `GET/POST/PATCH /food-items`, `POST /food-items/{id}/archive`, `GET /food-items/barcode/{code}` | reviewed library + ephemeral OFF candidates |
 | `GET/POST /meal-logs`, `PATCH/DELETE /meal-logs/{id}` | CRUD; server-computed totals; optional replay-safe mutation UUID |
 | `GET /daily-summary?day=` | tz-local targets/consumed/remaining |
 | `GET /analytics/daily` | tz-aware ranges + source/food filters, summaries, history, source mix, top foods (D20/D38) |
 | `POST /vision/parse-label` | LLM extraction → normalized per-100g; **stateless, never writes** |
 | `GET/PUT /settings`, `POST /settings/test` | UI-managed provider config; keys write-only; cookie-session-only |
 | `POST /chat/stream` | SSE harness: `meta` → `delta` → typed `block` → `done`; persists chat only (D39) |
+| `GET/POST/PUT /routines`, schedule state, `POST /agenda/refresh`, occurrence complete/skip | user-owned plans, wall-clock recurrence, explicit lifecycle |
+| `GET/PUT/DELETE /push` | cookie-only encrypted browser subscription management |
 | `GET /health` · `GET /ready` | dependency-free liveness · DB/schema/profile readiness |
 
-Conventions: DTOs in `app/schemas/api.py`; the single profile row is resolved by the `get_current_profile` dependency; 401 means re-login. Auth accepts the session cookie **or** — for Apple Shortcuts/automation — `Authorization: Bearer $PLATEOS_API_TOKEN` when configured (decision D19; full API access, rotate the production secret file and restart the API). **Every new `Settings` field must be added to `.env.example` in the same change** (rule from D19's postmortem).
+Conventions: DTOs live under `app/schemas`; the current account profile is resolved by `get_current_profile`; 401 means re-login. Auth accepts the session cookie **or** — except for cookie-only settings, account-management, and push surfaces — `Authorization: Bearer $PLATEOS_API_TOKEN` when configured (decision D19; full data API access, rotate the production secret file and restart the API). **Every new `Settings` field must be added to `.env.example` in the same change** (rule from D19's postmortem).
 
 ## 6. LLM integration rules
 
@@ -150,7 +160,7 @@ Conventions: DTOs in `app/schemas/api.py`; the single profile row is resolved by
 - Settings presets include OpenAI, Gemini, Ollama, and DeepSeek. DeepSeek text uses `deepseek-v4-flash`; official hosted vision uses the experimental `deepseek-v4-flash-vision-exp` and must be configured as a separate vision provider rather than inheriting the text model.
 - Runtime provider config lives in `PLATEOS_RUNTIME_SETTINGS_FILE` (JSON, outside the DB/backups). API keys are write-only over the API; Settings mutations are cookie-session-only — the bearer token cannot reach them. After a restore drill, re-enter provider config (D35).
 - New LLM tasks = new Pydantic contract in `schemas/llm_contracts.py` + call via `LLMService.extract_json()` (JSON mode → validate → one corrective retry).
-- Assistant output is a strict D39 block union (`meal_proposal`, `goal_draft`, `analytics_navigation`, `evidence_insight`). Never add generic URL/method/payload actions or execute model output directly. Context is server-built, user-scoped, and mode-minimized; body measurements are goals-only.
+- Assistant output is a strict D39/D41 block union (`meal_proposal`, `meal_plan_draft`, `goal_draft`, `analytics_navigation`, `evidence_insight`). Never add generic URL/method/payload actions or execute model output directly. Context is server-built, user-scoped, and mode-minimized; body measurements are goals-only.
 - The chat system prompt gets fresh context injected per turn (`build_context` in `routes/chat.py`): local datetime, today's consumed/remaining, last-3-days trend. Extend there, not by hand-editing prompts elsewhere.
 - Privacy: default assumption is that label photos may leave the host unless the resolved vision endpoint points at Ollama. Say this in any UI/docs touching vision features.
 
@@ -169,9 +179,11 @@ cp ../.env.example .env   # adjust
 
 **Frontend (dev):** `cd frontend && npm install && npm run dev` (proxies `/api` → :8000). `npm run build` = typecheck + build. `npm run typecheck` alone is fast.
 
-**Full stack:** production-shaped Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin (local default `http://127.0.0.1:8080`). API runs migrations on boot. Never reuse development credentials in this flow.
+**Local review stack:** `docker compose -f docker-compose.dev.yml up --build --wait` serves `http://127.0.0.1:8081` with disposable `admin` / `changeme` credentials and isolated `plateos-dev` volumes (D40). Use `down` without `-v` to preserve review data.
 
-**Verification expectations:** 93 pytest tests (nutrition math, validation, integrity, analytics, AI harness/LLM, auth, accounts, production settings, request limits, readiness, runtime settings, recovery guards); 20 Vitest tests for mirrored math, analytics/harness helpers, and the offline queue; `tsc --noEmit` clean; OpenAPI lists 19 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The hardened local Docker/PostgreSQL smoke, synthetic backup, and isolated restore drill passed 2026-08-25 (see D29-D33); production evidence is separate.
+**Production stack:** hardened Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin. API runs migrations on boot. Never reuse development credentials in this flow. The first production D41 release is the content-addressed artifact `d41-5bccac401913` (D42); it runs without the optional push profile.
+
+**Verification expectations:** 184 pytest tests and 43 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 30 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The review database upgraded through `0005` and the local stack/build passed 2026-09-02. Production also upgraded `0003 → 0005`, reached healthy readiness, and passed authenticated read-only API checks on 2026-09-02 (D42). Real push delivery, authenticated edge access, production restore, and iOS evidence remain separate.
 
 ## 8. Conventions & gotchas
 
@@ -189,7 +201,7 @@ cp ../.env.example .env   # adjust
 - **Containers:** base images use multi-platform index digests, Python production installs `requirements.lock`, frontend uses `npm ci --ignore-scripts`, and runtimes are non-root/read-only with bounded logs. Update pins and lockfiles intentionally together.
 - **Recovery:** never archive live `pgdata`. Use the opt-in encrypted `pg_dump` job and the separate restore project. The backup refuses an uninitialized/unsupported DB or invalid single-profile state and publishes ciphertext only after its checksum sidecar. Restore emptiness inspection relies on PostgreSQL's normal-object OID boundary and must be revalidated with a database major-version pin change. A synthetic local drill passes, but tooling/local evidence is not a production backup; do not say "backed up" until monitored production backups, independent retention, and an isolated application restore are verified.
 
-## 9. Roadmap status (as of 2026-08-31)
+## 9. Roadmap status (as of 2026-09-02)
 
 - [x] Phase 1 — scaffold, data layer, CRUD, auth, docker-compose
 - [x] Phase 2 — barcode + label pipelines, vision endpoint, downscaler *(live OFF lookup verified)*
@@ -205,10 +217,16 @@ cp ../.env.example .env   # adjust
 - [x] Desktop navigation redesign: horizontal control deck, mobile-only bottom navigation, natural document scrolling (D37, 2026-08-31)
 - [x] Filterable analytics workspace: custom ranges, source/food filters, nutrient and weekday trends, source mix, top foods (D38, 2026-08-31)
 - [x] Constrained AI harness: contextual meal ideas, goal drafts, evidence insights, and safe Stats navigation (D39, 2026-08-31)
+- [x] Isolated one-command local review Compose stack (D40, 2026-09-02)
+- [x] Account-owned offline meal and occurrence replay with durable, idempotent completion attempts (D41, 2026-09-02)
+- [x] Reviewed product library and local → OFF candidate → optional label proof → explicit save/log pipeline (D41, 2026-09-02)
+- [x] Rough/defined routines, schedules, DST-aware occurrences, agenda/countdown, and Proposal Card completion (D41, 2026-09-02)
+- [x] Constrained AI meal-plan drafts with explicit routine/schedule confirmation (D41, 2026-09-02)
+- [x] Transport-neutral notification outbox and isolated opt-in Web Push worker with generic payloads (D41, 2026-09-02)
+- [x] Homelab production deployment: content-addressed D41 images, `0003 → 0005`, loopback origin, TLS/Access challenge, and pre/post encrypted backup checksums (D42, 2026-09-02)
 - [ ] Production recovery operations: choose destination, schedule, retention, RPO/RTO, monitoring, and execute an authorized restore drill from a production backup
 - [ ] Real LLM round-trips (point `PLATEOS_LLM_BASE_URL` at OpenAI/Gemini/DeepSeek/Ollama and exercise vision + chat)
 - [ ] iOS device testing: camera in standalone PWA, install/offline behavior, safe areas
-- [ ] Homelab deployment behind TLS proxy (production Compose already forces Secure cookies; target port/route/Access remain unverified)
 - [ ] Optional later: effective-dated target history, food search-as-you-type in Quick Log
 
 ## 10. Documentation conventions

@@ -10,7 +10,15 @@ from app.api.routes.router import api_router
 from app.config import get_settings
 from app.db import SessionLocal
 from app.middleware import RequestBodyLimitMiddleware
-from app.models import MealLog, MealLogMutation, UserProfile
+from app.models import (
+    FoodItem,
+    FoodItemMutation,
+    MealLog,
+    MealLogMutation,
+    MealOccurrence,
+    PushSubscription,
+    UserProfile,
+)
 from app.services.accounts import hash_password
 
 logger = logging.getLogger("plateos")
@@ -98,6 +106,10 @@ async def ready():
             # Probe columns introduced by the current schema, including on empty tables.
             await session.scalar(select(MealLog.calories_per_100).limit(1))
             await session.scalar(select(MealLogMutation.request_fingerprint).limit(1))
+            await session.scalar(select(FoodItem.nutrition_source).limit(1))
+            await session.scalar(select(FoodItemMutation.request_fingerprint).limit(1))
+            await session.scalar(select(MealOccurrence.user_id).limit(1))
+            await session.scalar(select(PushSubscription.endpoint_fingerprint).limit(1))
     except Exception:  # noqa: BLE001 - return a stable status without leaking DB details
         logger.exception("Readiness database check failed")
         return JSONResponse({"status": "not_ready"}, status_code=503)

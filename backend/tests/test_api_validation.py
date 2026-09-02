@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from app.api.routes.meals import day_bounds
 from app.config import Settings
 from app.schemas.api import MealLogCreate, MealLogPatch, UserProfileUpdate
-from app.schemas.llm_contracts import FoodItemProposal, Per100Values
+from app.schemas.llm_contracts import FoodItemProposal, MealPlanScheduleDraft, Per100Values
 
 
 def custom_log(**overrides) -> MealLogCreate:
@@ -32,6 +32,19 @@ def test_validates_iana_timezones():
         UserProfileUpdate(timezone="Not/AZone")
     with pytest.raises(ValidationError):
         Settings(default_user_timezone="Not/AZone", _env_file=None)
+    assert MealPlanScheduleDraft(
+        local_time="08:00",
+        timezone="Europe/Lisbon",
+        frequency="daily",
+        start_date="2026-09-02",
+    ).timezone == "Europe/Lisbon"
+    with pytest.raises(ValidationError):
+        MealPlanScheduleDraft(
+            local_time="08:00",
+            timezone="Not/AZone",
+            frequency="daily",
+            start_date="2026-09-02",
+        )
 
 
 def test_requires_aware_meal_timestamps():
