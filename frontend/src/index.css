@@ -19,10 +19,10 @@ body {
   }
 }
 
-/* iOS standalone can retain Safari's smaller toolbar-adjusted dynamic viewport. */
+/* Fill the toolbar-free installed surface instead of inheriting iOS's shorter root viewport. */
 @media (display-mode: standalone) and (max-width: 767px) {
   .mobile-app-shell {
-    height: 100%;
+    height: 100lvh;
   }
 }
 
