@@ -246,7 +246,7 @@ export default function App() {
     ) : null;
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-zinc-950 md:block md:h-auto md:min-h-full md:overflow-visible">
+    <div className="mobile-app-shell flex flex-col overflow-hidden bg-zinc-950 md:block md:min-h-full md:overflow-visible">
       <DesktopHeader
         tab={tab}
         onTab={setTab}
