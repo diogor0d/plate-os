@@ -401,7 +401,7 @@ export function SettingsView() {
         </Button>
       </Card>
 
-      <div className="sticky bottom-20 space-y-2 md:static">
+      <div className="sticky bottom-2 space-y-2 md:static">
         {saveState && (
           <p className={`flex items-center gap-1.5 text-xs ${saveState.ok ? "text-emerald-400" : "text-red-400"}`}>
             {saveState.ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}

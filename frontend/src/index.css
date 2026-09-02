@@ -101,7 +101,7 @@ button,
 }
 
 .coach-composer {
-  bottom: var(--coach-mobile-nav-offset, 4rem);
+  bottom: 0;
 }
 
 .coach-status-pulse {

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, Plus, Sparkles } from "lucide-react";
 import { ApiError, api } from "./lib/api";
@@ -119,6 +119,7 @@ export default function App() {
   const [assistantLaunch, setAssistantLaunch] = useState<AssistantLaunch | null>(null);
   const [analyticsIntent, setAnalyticsIntent] = useState<AnalyticsIntent | null>(null);
   const [routineProposal, setRoutineProposal] = useState<RoutineMealProposal | null>(null);
+  const mobileScrollRef = useRef<HTMLDivElement>(null);
 
   const me = useQuery({
     queryKey: ["me"],
@@ -245,7 +246,7 @@ export default function App() {
     ) : null;
 
   return (
-    <div className="min-h-full bg-zinc-950">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-zinc-950 md:block md:h-auto md:min-h-full md:overflow-visible">
       <DesktopHeader
         tab={tab}
         onTab={setTab}
@@ -254,7 +255,10 @@ export default function App() {
         status={statusLine}
       />
 
-      <div className="mx-auto flex min-h-full max-w-7xl flex-col px-4 pb-24 pt-[env(safe-area-inset-top)] md:min-h-[calc(100vh-76px)] md:px-6 md:pb-12 md:pt-9 lg:px-10">
+      <div
+        ref={mobileScrollRef}
+        className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col overflow-y-auto overscroll-y-contain px-4 pb-4 pt-[env(safe-area-inset-top)] md:min-h-[calc(100vh-76px)] md:overflow-visible md:overscroll-y-auto md:px-6 md:pb-12 md:pt-9 lg:px-10"
+      >
         {/* Mobile header */}
         <header className="space-y-3 py-4 md:hidden">
           <div className="flex items-center justify-between">
@@ -429,8 +433,7 @@ export default function App() {
       <BottomNav
         tab={tab}
         onTab={(nextTab) => {
-          // iOS standalone can retain an invalid scroll offset while a shorter tab replaces a long one.
-          window.scrollTo(0, 0);
+          mobileScrollRef.current?.scrollTo(0, 0);
           setTab(nextTab);
         }}
       />

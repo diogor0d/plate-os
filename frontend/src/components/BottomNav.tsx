@@ -20,7 +20,7 @@ export function BottomNav({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void })
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-10 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur pb-safe md:hidden"
+      className="z-10 shrink-0 border-t border-zinc-800 bg-zinc-950 pb-safe md:hidden"
     >
       <div className="mx-auto grid max-w-md grid-cols-6">
         {TABS.map(({ id, label, icon: Icon }) => (
