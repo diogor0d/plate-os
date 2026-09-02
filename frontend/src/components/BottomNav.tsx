@@ -7,11 +7,10 @@ export const TABS: readonly {
   id: Tab;
   label: string;
   icon: typeof Home;
-  mobileIconClassName?: string;
 }[] = [
-  { id: "today", label: "Today", icon: Home, mobileIconClassName: "translate-y-0.5" },
-  { id: "scan", label: "Scan", icon: ScanLine, mobileIconClassName: "translate-y-0.5" },
-  { id: "plan", label: "Plan", icon: CalendarClock, mobileIconClassName: "translate-y-0.5" },
+  { id: "today", label: "Today", icon: Home },
+  { id: "scan", label: "Scan", icon: ScanLine },
+  { id: "plan", label: "Plan", icon: CalendarClock },
   { id: "coach", label: "Coach", icon: MessageCircle },
   { id: "stats", label: "Stats", icon: BarChart3 },
   { id: "settings", label: "Settings", icon: Settings },
@@ -24,7 +23,7 @@ export function BottomNav({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void })
       className="fixed inset-x-0 bottom-0 z-10 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur pb-safe md:hidden"
     >
       <div className="mx-auto grid max-w-md grid-cols-6">
-        {TABS.map(({ id, label, icon: Icon, mobileIconClassName }) => (
+        {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
@@ -35,7 +34,7 @@ export function BottomNav({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void })
               tab === id ? "text-emerald-400" : "text-zinc-500",
             )}
           >
-            <Icon className={cn("h-5 w-5", mobileIconClassName)} />
+            <Icon className="h-5 w-5" />
             {label}
           </button>
         ))}

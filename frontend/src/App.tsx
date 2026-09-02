@@ -416,7 +416,14 @@ export default function App() {
         </main>
       </div>
 
-      <BottomNav tab={tab} onTab={setTab} />
+      <BottomNav
+        tab={tab}
+        onTab={(nextTab) => {
+          // iOS standalone can retain an invalid scroll offset while a shorter tab replaces a long one.
+          window.scrollTo(0, 0);
+          setTab(nextTab);
+        }}
+      />
     </div>
   );
 }
