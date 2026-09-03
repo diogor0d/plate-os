@@ -90,7 +90,7 @@ async def test_schema_preamble_forbids_arithmetic():
 
 
 @pytest.mark.asyncio
-async def test_official_deepseek_disables_thinking_for_json_and_probe(monkeypatch):
+async def test_official_deepseek_text_uses_adaptive_reasoning_and_nonthinking_probe(monkeypatch):
     service = make_service([VALID_EXTRACTION, "OK"])
     monkeypatch.setattr(llm, "resolve_provider", lambda _task: (
         "https://api.deepseek.com", "deepseek-v4-flash", "key"
@@ -104,9 +104,31 @@ async def test_official_deepseek_disables_thinking_for_json_and_probe(monkeypatc
     assert await resolved.probe() == "OK"
 
     calls = service._client.chat.completions.calls
-    assert calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert calls[0]["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert calls[0]["reasoning_effort"] == "high"
+    assert calls[0]["max_tokens"] == 16000
+    assert "temperature" not in calls[0]
     assert calls[1]["extra_body"] == {"thinking": {"type": "disabled"}}
     assert calls[1]["max_tokens"] == 32
+
+
+@pytest.mark.asyncio
+async def test_deepseek_reasoning_only_response_retries_with_larger_budget(monkeypatch):
+    service = make_service(["", VALID_EXTRACTION])
+    monkeypatch.setattr(llm, "resolve_provider", lambda _task: (
+        "https://api.deepseek.com", "deepseek-v4-flash", "key"
+    ))
+    monkeypatch.setattr(llm, "_client_for", lambda _url, _key: service._client)
+
+    result = await llm.get_llm("text").extract_json(
+        system="sys", prompt="extract", schema=NutritionLabelExtraction
+    )
+
+    assert result.product_name == "Oats"
+    calls = service._client.chat.completions.calls
+    assert calls[0]["max_tokens"] == 16000
+    assert calls[1]["max_tokens"] == 32000
+    assert len(calls[1]["messages"]) == 2
 
 
 def test_custom_deepseek_model_does_not_receive_hosted_provider_options(monkeypatch):
@@ -118,7 +140,23 @@ def test_custom_deepseek_model_does_not_receive_hosted_provider_options(monkeypa
 
     resolved = llm.get_llm("text")
 
-    assert resolved._provider_options() == {}
+    assert resolved._contract_options(0) == {"max_tokens": 2000}
+    assert resolved._probe_options() == {}
+
+
+def test_official_deepseek_vision_disables_thinking(monkeypatch):
+    service = make_service([VALID_EXTRACTION])
+    monkeypatch.setattr(llm, "resolve_provider", lambda _task: (
+        "https://api.deepseek.com", "deepseek-v4-flash-vision-exp", "key"
+    ))
+    monkeypatch.setattr(llm, "_client_for", lambda _url, _key: service._client)
+
+    resolved = llm.get_llm("vision")
+
+    assert resolved._contract_options(0) == {
+        "max_tokens": 2000,
+        "extra_body": {"thinking": {"type": "disabled"}},
+    }
 
 
 @pytest.mark.parametrize(

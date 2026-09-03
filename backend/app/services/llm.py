@@ -32,6 +32,8 @@ from app.services.runtime_settings import LlmTask, resolve_provider
 T = TypeVar("T", bound=BaseModel)
 
 MAX_ATTEMPTS = 2
+DEFAULT_OUTPUT_TOKENS = 2000
+DEEPSEEK_REASONING_OUTPUT_TOKENS = (16000, 32000)
 
 SCHEMA_PREAMBLE = (
     "\n\nRespond with a single JSON object and nothing else — no markdown "
@@ -93,13 +95,35 @@ def reset_llm_cache() -> None:
 
 
 class LLMService:
-    def __init__(self, client: AsyncOpenAI, model: str, *, disable_thinking: bool = False) -> None:
+    def __init__(
+        self,
+        client: AsyncOpenAI,
+        model: str,
+        *,
+        deepseek_reasoning: bool = False,
+        official_deepseek: bool = False,
+    ) -> None:
         self._client = client
         self.model = model
-        self._disable_thinking = disable_thinking
+        self._deepseek_reasoning = deepseek_reasoning
+        self._official_deepseek = official_deepseek
 
-    def _provider_options(self) -> dict[str, object]:
-        if self._disable_thinking:
+    def _contract_options(self, attempt: int) -> dict[str, object]:
+        if self._deepseek_reasoning:
+            return {
+                "max_tokens": DEEPSEEK_REASONING_OUTPUT_TOKENS[attempt],
+                "reasoning_effort": "high",
+                "extra_body": {"thinking": {"type": "enabled"}},
+            }
+        if self._official_deepseek:
+            return {
+                "max_tokens": DEFAULT_OUTPUT_TOKENS,
+                "extra_body": {"thinking": {"type": "disabled"}},
+            }
+        return {"max_tokens": DEFAULT_OUTPUT_TOKENS}
+
+    def _probe_options(self) -> dict[str, object]:
+        if self._official_deepseek:
             return {"extra_body": {"thinking": {"type": "disabled"}}}
         return {}
 
@@ -130,20 +154,23 @@ class LLMService:
             {"role": "user", "content": self._content(prompt, image_data_urls)},
         ]
         last_error: Exception | None = None
-        for _ in range(MAX_ATTEMPTS):
-            resp = await self._client.chat.completions.create(
-                model=self.model,
-                messages=messages,  # type: ignore[arg-type]
-                response_format={"type": "json_object"},
-                temperature=0.1,
-                max_tokens=2000,
-                **self._provider_options(),
-            )
+        for attempt in range(MAX_ATTEMPTS):
+            options: dict[str, object] = {
+                "model": self.model,
+                "messages": messages,
+                "response_format": {"type": "json_object"},
+                **self._contract_options(attempt),
+            }
+            if not self._deepseek_reasoning:
+                options["temperature"] = 0.1
+            resp = await self._client.chat.completions.create(**options)  # type: ignore[arg-type]
             raw = resp.choices[0].message.content or ""
             try:
                 return schema.model_validate_json(raw)
             except ValidationError as exc:
                 last_error = exc
+                if not raw.strip():
+                    continue
                 messages.append({"role": "assistant", "content": raw})
                 messages.append(
                     {
@@ -167,19 +194,20 @@ class LLMService:
             max_tokens=32,
             temperature=0,
             timeout=20,
-            **self._provider_options(),
+            **self._probe_options(),
         )
         return (resp.choices[0].message.content or "").strip()
 
 
 def get_llm(task: LlmTask) -> LLMService:
     base_url, model, api_key = resolve_provider(task)
-    disable_thinking = (
+    official_deepseek = (
         urlsplit(base_url).hostname == "api.deepseek.com"
         and model.startswith("deepseek-")
     )
     return LLMService(
         _client_for(base_url, api_key),
         model,
-        disable_thinking=disable_thinking,
+        deepseek_reasoning=official_deepseek and task == "text",
+        official_deepseek=official_deepseek,
     )

@@ -5,6 +5,7 @@ import json
 import logging
 import uuid
 
+from anyio import CancelScope
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,28 @@ from app.services.assistant import run_assistant
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
+HEARTBEAT_SECONDS = 15.0
+
+REASONING_PROGRESS = {
+    "coach": (
+        "Reasoning over today's nutrition context",
+        "Still reasoning; intermediate thoughts stay private",
+        "Waiting for the final structured answer",
+        "Still working; keeping this session active",
+    ),
+    "goals": (
+        "Reasoning over your goals context",
+        "Still reasoning; intermediate thoughts stay private",
+        "Waiting for the final structured answer",
+        "Still working; keeping this session active",
+    ),
+    "analytics": (
+        "Reasoning over the selected evidence",
+        "Still reasoning; intermediate thoughts stay private",
+        "Waiting for the final structured answer",
+        "Still working; keeping this session active",
+    ),
+}
 
 MEAL_PLAN_POLICY = """PlateOS meal-plan policy: when the user asks for a reusable
 meal plan, use a meal_plan_draft with a rough routine and, only when useful, a
@@ -41,6 +64,7 @@ async def chat_stream(
     response_id = uuid.uuid4()
 
     async def event_stream():
+        assistant_task: asyncio.Task | None = None
         yield _sse(
             "meta",
             {
@@ -53,7 +77,28 @@ async def chat_stream(
             assistant_request = body.model_copy(
                 update={"message": f"{body.message}\n\n{MEAL_PLAN_POLICY}"}
             )
-            response = await run_assistant(session, profile, assistant_request)
+            assistant_task = asyncio.create_task(
+                run_assistant(session, profile, assistant_request)
+            )
+            progress = REASONING_PROGRESS[body.mode]
+            progress_index = 0
+            yield _sse(
+                "progress",
+                {"stage": progress_index, "message": progress[progress_index]},
+            )
+            while True:
+                try:
+                    response = await asyncio.wait_for(
+                        asyncio.shield(assistant_task), timeout=HEARTBEAT_SECONDS
+                    )
+                    break
+                except TimeoutError:
+                    progress_index = min(progress_index + 1, len(progress) - 1)
+                    # App-authored status keeps proxies alive without exposing chain of thought.
+                    yield _sse(
+                        "progress",
+                        {"stage": progress_index, "message": progress[progress_index]},
+                    )
             session.add(
                 ChatMessage(
                     user_id=profile.id,
@@ -124,6 +169,13 @@ async def chat_stream(
                     "retryable": True,
                 },
             )
+        finally:
+            if assistant_task is not None:
+                if not assistant_task.done():
+                    assistant_task.cancel()
+                cleanup = asyncio.gather(assistant_task, return_exceptions=True)
+                with CancelScope(shield=True):
+                    await cleanup
 
     return StreamingResponse(
         event_stream(),

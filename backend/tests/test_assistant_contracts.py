@@ -1,9 +1,13 @@
+import asyncio
+import uuid
 from datetime import date
 
 import pytest
 from pydantic import ValidationError
 
+from app.api.routes import chat
 from app.api.routes.chat import MEAL_PLAN_POLICY
+from app.models import UserProfile
 from app.schemas.api import ChatRequest
 from app.schemas.llm_contracts import AssistantHarnessResponse, FoodItemProposal
 
@@ -72,6 +76,78 @@ def test_confirmation_cannot_be_disabled():
         AssistantHarnessResponse.model_validate(
             {"assistant_message": "Draft", "blocks": [block]}
         )
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_sends_heartbeats_while_reasoning(monkeypatch):
+    release = asyncio.Event()
+
+    async def slow_assistant(*_args):
+        await release.wait()
+        return AssistantHarnessResponse(assistant_message="Ready", blocks=[])
+
+    class Session:
+        def add(self, _value):
+            pass
+
+        async def commit(self):
+            pass
+
+        async def rollback(self):
+            pass
+
+    monkeypatch.setattr(chat, "run_assistant", slow_assistant)
+    monkeypatch.setattr(chat, "HEARTBEAT_SECONDS", 0.001)
+    response = await chat.chat_stream(
+        ChatRequest(message="Plan today"), UserProfile(id=uuid.uuid4()), Session()
+    )
+    iterator = response.body_iterator
+
+    assert "event: meta" in await anext(iterator)
+    first_progress = await anext(iterator)
+    assert "event: progress" in first_progress
+    assert "Reasoning over today's nutrition context" in first_progress
+    second_progress = await anext(iterator)
+    assert "event: progress" in second_progress
+    assert "intermediate thoughts stay private" in second_progress
+
+    release.set()
+    remaining = [chunk async for chunk in iterator]
+    assert any("event: done" in chunk for chunk in remaining)
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_waits_for_reasoning_task_cleanup(monkeypatch):
+    started = asyncio.Event()
+    cleaned = asyncio.Event()
+
+    async def slow_assistant(*_args):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleaned.set()
+
+    class Session:
+        async def rollback(self):
+            pass
+
+    monkeypatch.setattr(chat, "run_assistant", slow_assistant)
+    response = await chat.chat_stream(
+        ChatRequest(message="Plan today"), UserProfile(id=uuid.uuid4()), Session()
+    )
+    iterator = response.body_iterator
+    await anext(iterator)
+    await anext(iterator)
+    await started.wait()
+    pending_read = asyncio.create_task(anext(iterator))
+    await asyncio.sleep(0)
+
+    pending_read.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending_read
+
+    assert cleaned.is_set()
 
 
 def test_meal_plan_draft_accepts_rough_routine_and_weekly_schedule():

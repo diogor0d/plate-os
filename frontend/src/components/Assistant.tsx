@@ -125,6 +125,7 @@ export function Assistant({
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<ResponsePhase>("idle");
   const [thinkingStep, setThinkingStep] = useState(0);
+  const [reasoningStatus, setReasoningStatus] = useState<string | null>(null);
   const [mobileNavOffset, setMobileNavOffset] = useState(64);
   const [context, setContext] = useState<AssistantLaunch | null>(null);
   const sessionId = useRef(crypto.randomUUID());
@@ -197,6 +198,7 @@ export function Assistant({
     if (composer.current) composer.current.style.height = "auto";
     setBusy(true);
     setPhase("connecting");
+    setReasoningStatus(null);
     followThread.current = true;
     setMessages((current) => [
       ...current,
@@ -246,6 +248,9 @@ export function Assistant({
           const data: unknown = JSON.parse(dataLine.slice(6));
           if (event === "meta") {
             setPhase("thinking");
+          } else if (event === "progress" && typeof data === "object" && data !== null && "message" in data) {
+            setPhase("thinking");
+            setReasoningStatus(String(data.message));
           } else if (event === "delta" && typeof data === "object" && data !== null && "text" in data) {
             setPhase("streaming");
             assistantText += String(data.text ?? "");
@@ -297,7 +302,7 @@ export function Assistant({
 
   const thinkingLabel = phase === "connecting"
     ? "Opening a secure coach session"
-    : thinkingCopy[mode][thinkingStep];
+    : reasoningStatus ?? thinkingCopy[mode][thinkingStep];
 
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-11rem)] max-w-4xl flex-col md:min-h-[calc(100dvh-16rem)]">
