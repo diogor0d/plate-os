@@ -6,6 +6,7 @@ from httpx import Request, Response
 from openai import AuthenticationError, NotFoundError, RateLimitError
 
 from app.schemas.llm_contracts import NutritionLabelExtraction, Per100Values
+from app.services import llm
 from app.services.llm import LLMError, LLMService, describe_llm_error
 
 VALID_EXTRACTION = """
@@ -86,6 +87,38 @@ async def test_schema_preamble_forbids_arithmetic():
     user_content = call["messages"][1]["content"]
     assert isinstance(user_content, list)  # multimodal blocks
     assert user_content[0]["image_url"]["url"].startswith("data:image/webp")
+
+
+@pytest.mark.asyncio
+async def test_official_deepseek_disables_thinking_for_json_and_probe(monkeypatch):
+    service = make_service([VALID_EXTRACTION, "OK"])
+    monkeypatch.setattr(llm, "resolve_provider", lambda _task: (
+        "https://api.deepseek.com", "deepseek-v4-flash", "key"
+    ))
+    monkeypatch.setattr(llm, "_client_for", lambda _url, _key: service._client)
+
+    resolved = llm.get_llm("text")
+    await resolved.extract_json(
+        system="sys", prompt="extract", schema=NutritionLabelExtraction
+    )
+    assert await resolved.probe() == "OK"
+
+    calls = service._client.chat.completions.calls
+    assert calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert calls[1]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert calls[1]["max_tokens"] == 32
+
+
+def test_custom_deepseek_model_does_not_receive_hosted_provider_options(monkeypatch):
+    service = make_service(["OK"])
+    monkeypatch.setattr(llm, "resolve_provider", lambda _task: (
+        "http://ollama.internal/v1", "deepseek-r1", None
+    ))
+    monkeypatch.setattr(llm, "_client_for", lambda _url, _key: service._client)
+
+    resolved = llm.get_llm("text")
+
+    assert resolved._provider_options() == {}
 
 
 @pytest.mark.parametrize(

@@ -3,10 +3,12 @@
 import pytest
 from fastapi import HTTPException
 
+from app.api.routes import settings
 from app.api.routes.settings import _apply_provider, read_settings, update_settings
 from app.schemas.api import (
     ProviderConfigIn,
     RuntimeSettingsIn,
+    SettingsTestRequest,
     VisionProviderConfigIn,
 )
 from app.services import runtime_settings
@@ -119,3 +121,19 @@ def test_cookie_only_dependency_rejects_missing_session():
 
         asyncio.run(get_cookie_profile(FakeRequest(), session=None))  # type: ignore[arg-type]
     assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_empty_provider_probe_is_reported_as_failure(monkeypatch):
+    class EmptyProbe:
+        async def probe(self):
+            return ""
+
+    monkeypatch.setattr(settings, "get_llm", lambda _task: EmptyProbe())
+
+    result = await settings.test_provider(
+        SettingsTestRequest(task="text"), None  # type: ignore[arg-type]
+    )
+
+    assert result.ok is False
+    assert result.detail == "Provider responded with an empty message."

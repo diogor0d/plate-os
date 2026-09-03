@@ -97,6 +97,6 @@ async def test_provider(
     try:
         reply = await get_llm(body.task).probe()
         detail = reply or "Provider responded with an empty message."
-        return SettingsTestResponse(ok=True, detail=detail[:200])
+        return SettingsTestResponse(ok=bool(reply), detail=detail[:200])
     except Exception as exc:  # noqa: BLE001 - surfaced verbatim for diagnosis
         return SettingsTestResponse(ok=False, detail=str(exc)[:500])

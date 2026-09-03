@@ -13,6 +13,7 @@ unlike provider-specific structured-output APIs.
 
 import json
 from typing import TypeVar
+from urllib.parse import urlsplit
 
 from openai import (
     APIConnectionError,
@@ -92,9 +93,15 @@ def reset_llm_cache() -> None:
 
 
 class LLMService:
-    def __init__(self, client: AsyncOpenAI, model: str) -> None:
+    def __init__(self, client: AsyncOpenAI, model: str, *, disable_thinking: bool = False) -> None:
         self._client = client
         self.model = model
+        self._disable_thinking = disable_thinking
+
+    def _provider_options(self) -> dict[str, object]:
+        if self._disable_thinking:
+            return {"extra_body": {"thinking": {"type": "disabled"}}}
+        return {}
 
     @staticmethod
     def _content(prompt: str, image_data_urls: list[str] | None) -> str | list[dict]:
@@ -130,6 +137,7 @@ class LLMService:
                 response_format={"type": "json_object"},
                 temperature=0.1,
                 max_tokens=2000,
+                **self._provider_options(),
             )
             raw = resp.choices[0].message.content or ""
             try:
@@ -156,13 +164,22 @@ class LLMService:
         resp = await self._client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": "Reply with the single word OK."}],
-            max_tokens=5,
+            max_tokens=32,
             temperature=0,
             timeout=20,
+            **self._provider_options(),
         )
         return (resp.choices[0].message.content or "").strip()
 
 
 def get_llm(task: LlmTask) -> LLMService:
     base_url, model, api_key = resolve_provider(task)
-    return LLMService(_client_for(base_url, api_key), model)
+    disable_thinking = (
+        urlsplit(base_url).hostname == "api.deepseek.com"
+        and model.startswith("deepseek-")
+    )
+    return LLMService(
+        _client_for(base_url, api_key),
+        model,
+        disable_thinking=disable_thinking,
+    )
