@@ -3,9 +3,9 @@
 ## Status and evidence boundary
 
 - Runtime state: `VERIFIED` on 2026-09-03 at the approved homelab target. Public
-  repository commit `1e6922c` runs as healthy `db`, `api`, and `web` services
+  repository commit `5cdce9a` runs as healthy `db`, `api`, and `web` services
   with a loopback-only origin and schema `0005`. The configured DeepSeek provider
-  passed a real connection probe and schema-validated assistant round-trip. It
+  passed a real reasoning-enabled, schema-validated assistant round-trip. It
   supersedes the initial content-addressed D41 deployment recorded by D42.
 - Intended target: the operator's approved Ubuntu Docker host. Hostnames,
   addresses, and tunnel specifics live in the operator's private homelab
