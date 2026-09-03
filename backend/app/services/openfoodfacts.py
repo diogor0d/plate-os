@@ -9,6 +9,7 @@ from app.schemas.llm_contracts import Per100Values
 from app.services.runtime_settings import resolve_openfoodfacts_base_url
 
 USER_AGENT = "PlateOS/0.1 (self-hosted nutrition tracker)"
+PRODUCT_FIELDS = "product_name,brands,nutriments"
 
 MissingIssue = Literal[
     "missing_name",
@@ -45,7 +46,10 @@ async def fetch_product_by_barcode(barcode: str) -> OFFResult | None:
         async with httpx.AsyncClient(
             timeout=10, headers={"User-Agent": USER_AGENT}
         ) as client:
-            response = await client.get(f"{base_url}/product/{barcode}.json")
+            response = await client.get(
+                f"{base_url.rstrip('/')}/product/{barcode}.json",
+                params={"fields": PRODUCT_FIELDS},
+            )
     except httpx.HTTPError as exc:
         raise OFFUpstreamError("Open Food Facts request failed") from exc
 

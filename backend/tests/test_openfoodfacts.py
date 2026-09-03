@@ -32,6 +32,7 @@ class FakeHttpClient:
         self.response = response
         self.error = error
         self.requested_url: str | None = None
+        self.requested_params: dict[str, str] | None = None
 
     async def __aenter__(self):
         return self
@@ -39,8 +40,9 @@ class FakeHttpClient:
     async def __aexit__(self, exc_type, exc, traceback):
         return None
 
-    async def get(self, url: str) -> FakeResponse:
+    async def get(self, url: str, *, params: dict[str, str]) -> FakeResponse:
         self.requested_url = url
+        self.requested_params = params
         if self.error:
             raise self.error
         assert self.response is not None
@@ -84,6 +86,7 @@ async def test_off_success_preserves_missing_fields_as_candidate_issues(monkeypa
     result = await openfoodfacts.fetch_product_by_barcode("5601234567890")
 
     assert client.requested_url == "https://off.test/api/v2/product/5601234567890.json"
+    assert client.requested_params == {"fields": openfoodfacts.PRODUCT_FIELDS}
     assert result == OFFResult(
         name="Greek Yogurt",
         brand="Example Foods",

@@ -6,7 +6,21 @@
  * The <video> element must already have a live MediaStream attached before
  * calling startBarcodeScan.
  */
-import { BrowserMultiFormatReader } from "@zxing/browser";
+import { BarcodeFormat, BrowserMultiFormatReader } from "@zxing/browser";
+import { DecodeHintType } from "@zxing/library";
+
+const PRODUCT_FORMATS = [BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A];
+
+export function isValidProductBarcode(value: string): boolean {
+  if (!/^(?:\d{8}|\d{12}|\d{13})$/.test(value)) return false;
+  const digits = [...value].map(Number);
+  const checkDigit = digits.pop();
+  const sum = digits.reverse().reduce(
+    (total, digit, index) => total + digit * (index % 2 === 0 ? 3 : 1),
+    0,
+  );
+  return checkDigit === (10 - (sum % 10)) % 10;
+}
 
 declare global {
   interface Window {
@@ -21,13 +35,14 @@ export async function startBarcodeScan(
   onResult: (barcode: string) => void,
 ): Promise<() => void> {
   if ("BarcodeDetector" in window && window.BarcodeDetector) {
-    const detector = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
+    const detector = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a"] });
     let stopped = false;
     const loop = async () => {
       if (stopped) return;
       try {
         const codes = await detector.detect(video);
-        if (codes.length > 0 && codes[0].rawValue) onResult(codes[0].rawValue);
+        const productCode = codes.find((code) => isValidProductBarcode(code.rawValue));
+        if (productCode) onResult(productCode.rawValue);
       } catch {
         /* frame not ready yet */
       }
@@ -39,9 +54,11 @@ export async function startBarcodeScan(
     };
   }
 
-  const reader = new BrowserMultiFormatReader();
+  const hints = new Map<DecodeHintType, unknown>();
+  hints.set(DecodeHintType.POSSIBLE_FORMATS, PRODUCT_FORMATS);
+  const reader = new BrowserMultiFormatReader(hints);
   const controls = await reader.decodeFromVideoElement(video, (result) => {
-    if (result) onResult(result.getText());
+    if (result && isValidProductBarcode(result.getText())) onResult(result.getText());
   });
   return () => controls.stop();
 }

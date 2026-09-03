@@ -72,7 +72,7 @@ and restore drills use a separate internal-only Compose project (D31-D33).
 | Database | PostgreSQL 17, plain | D4 |
 | LLM | one OpenAI-compatible client per task; text (coach) and vision (labels) resolve independently — UI overrides then env defaults, vision inherits text unless split (D34/D35) | D5, D34 |
 | Auth | password + HMAC-signed HttpOnly cookie; multi-user accounts with scrypt hashes, first account admin (D11 → D36) | D6, D11, D36 |
-| Barcode | @zxing/browser primary; BarcodeDetector fast path | D7 |
+| Barcode | @zxing/browser primary; BarcodeDetector fast path; retail GTIN formats/check digits only (D48) | D7, D48 |
 | Offline | Dexie queue, poison-pill protected | D8 |
 | Streaming | SSE (single structured call; deltas server-chunked) | D9 |
 | Deploy | Hardened Docker Compose (db + api + web/Caddy), loopback origin, external TLS | D12, D17, D29-D33 |
@@ -183,7 +183,7 @@ cp ../.env.example .env   # adjust
 
 **Production stack:** hardened Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin. API runs migrations on boot. Never reuse development credentials in this flow. Production runs commit `d12794a` without the optional push profile; it supersedes the initial content-addressed D41 artifact recorded by D42.
 
-**Verification expectations:** 196 pytest tests and 45 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 31 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The review database upgraded through `0005` and the local stack/build passed 2026-09-02. Production also upgraded `0003 → 0005`, reached healthy readiness, and passed authenticated read-only API checks on 2026-09-02 (D42). The `dbf9d39` mobile shell and standalone viewport passed physical iPhone testing on 2026-09-03 (D46); real push delivery, authenticated edge access, production restore, and remaining iOS camera/offline behavior remain separate.
+**Verification expectations:** 196 pytest tests and 56 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, barcode validation, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 31 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The review database upgraded through `0005` and the local stack/build passed 2026-09-02. Production also upgraded `0003 → 0005`, reached healthy readiness, and passed authenticated read-only API checks on 2026-09-02 (D42). The `dbf9d39` mobile shell and standalone viewport passed physical iPhone testing on 2026-09-03 (D46); real push delivery, authenticated edge access, production restore, and remaining iOS camera/offline behavior remain separate.
 
 ## 8. Conventions & gotchas
 
@@ -191,6 +191,7 @@ cp ../.env.example .env   # adjust
 - **TypeScript:** strict mode, no `any`; components small; Tailwind utility classes inline; new UI primitives follow the `ui/Button` cva+cn pattern.
 - **Windows dev host (Git Bash):** venv binaries at `.venv/Scripts/`, not `bin/`. npm may block postinstall scripts (esbuild) via `allow-scripts` — the build still works because platform binaries ship as optional deps; if a tool complains, `npm approve-scripts` it.
 - **iOS:** Safari has no `BarcodeDetector` (hence D7); camera requires HTTPS in production (fine behind the proxy, use `localhost` in dev); respect safe-area classes; keep `touch-action: manipulation` on interactive controls.
+- **Product barcodes:** camera decoding accepts only EAN-8, EAN-13, and UPC-A and verifies the GTIN check digit before lookup. Do not broaden formats without a concrete product use case and equivalent validation (D48).
 - **Mobile shell:** below `md`, the app owns a flex viewport (`100dvh` in-browser, `100lvh` in standalone mode); only its content pane scrolls, while `BottomNav` remains a normal-flow non-scrolling sibling. Do not restore viewport-fixed mobile navigation; page-height changes make it unstable in iOS standalone mode (D44-D46).
 - **SSE:** any new proxy layer in front must disable buffering (Caddy `flush_interval -1`, `X-Accel-Buffering: no` header already set).
 - **Dexie queue:** only 429/5xx/network failures enqueue or retry. Direct permanent 4xx errors keep the Proposal Card open; queued permanent 4xx entries move to a visible failed state and do not block later rows. The backend mutation ledger is the cross-tab duplicate boundary.
