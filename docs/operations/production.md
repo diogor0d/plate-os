@@ -2,11 +2,11 @@
 
 ## Status and evidence boundary
 
-- Runtime state: `VERIFIED` on 2026-09-02 at the approved homelab target. Public
-  repository commit `d12794a` runs as healthy `db`, `api`, and `web` services
-  with a loopback-only origin; schema migration `0003` to `0005` completed
-  successfully. It supersedes the initial content-addressed D41 deployment
-  recorded by D42.
+- Runtime state: `VERIFIED` on 2026-09-03 at the approved homelab target. Public
+  repository commit `f466c37` runs as healthy `db`, `api`, and `web` services
+  with a loopback-only origin and schema `0005`. Open Food Facts resolved a
+  known product through the production API container. It supersedes the initial
+  content-addressed D41 deployment recorded by D42.
 - Intended target: the operator's approved Ubuntu Docker host. Hostnames,
   addresses, and tunnel specifics live in the operator's private homelab
   inventory, deliberately outside this public repository.
@@ -23,7 +23,7 @@
 - `VERIFIED` on 2026-09-02: sufficient target capacity, Docker/Compose runtime,
   release path, loopback listener, local liveness/readiness, authenticated
   profile/product/routine reads, password login, cookie-only push status, the
-  30-path OpenAPI surface, and an external TLS Access challenge without an
+  31-path OpenAPI surface, and an external TLS Access challenge without an
   origin error.
 - `VERIFIED` on 2026-09-02: encrypted pre-migration and post-migration database
   archives were created and their ciphertext checksums passed. This is not a
@@ -334,6 +334,71 @@ What it does: Builds/reconciles the PlateOS project, starts PostgreSQL, applies
 Alembic migrations before API startup, then admits API and web only after
 readiness succeeds. It mutates production containers, images, database schema,
 and possibly seeded data; backup and rollback prerequisites must already pass.
+
+### Updating an existing release
+
+Use a full pushed Git commit, a fresh release directory, and the existing
+server-owned non-secret `.env` and Compose override. Set these paths for the
+approved host; do not copy secret files into the release directory:
+
+```bash
+set -eu
+release=<full-40-character-commit>
+releases=/approved/path/plate-os-releases
+current="$releases/<current-commit>-codeload"
+target="$releases/$release-codeload"
+override=/approved/path/docker-compose.override.yml
+archive="$(mktemp /tmp/plateos-release.XXXXXX.tar.gz)"
+
+test -d "$releases"
+test -d "$current"
+test ! -e "$target"
+curl --fail --location --silent --show-error \
+  "https://codeload.github.com/diogor0d/plate-os/tar.gz/$release" \
+  --output "$archive"
+sha256sum "$archive"
+mkdir "$target"
+tar -xzf "$archive" --strip-components=1 -C "$target"
+cp -p "$current/.env" "$target/.env"
+cp -p "$override" "$target/docker-compose.override.yml"
+rm -f "$archive"
+sed -i "s/^PLATEOS_IMAGE_TAG=.*/PLATEOS_IMAGE_TAG=$release/" "$target/.env"
+grep -q "^PLATEOS_IMAGE_TAG=$release$" "$target/.env"
+```
+
+What it does: Downloads an immutable public source archive, records its hash,
+creates a separate rollback-friendly release, and updates only the non-secret
+image tag. It writes a new deployment directory and requires an already reviewed
+`.env`, server override, clean target path, and explicit production authorization.
+
+Define the release-scoped Compose command, validate without printing rendered
+configuration, then build and roll API/web separately:
+
+```bash
+compose=(
+  docker compose
+  --project-directory "$target"
+  --env-file "$target/.env"
+  -f "$target/docker-compose.yml"
+  -f "$target/docker-compose.override.yml"
+)
+
+"${compose[@]}" config --quiet
+"${compose[@]}" config --services
+"${compose[@]}" config --images
+"${compose[@]}" build api web
+"${compose[@]}" up -d --no-deps --wait api
+curl --fail --silent http://127.0.0.1:<selected-port>/api/ready
+"${compose[@]}" up -d --no-deps --wait web
+```
+
+What it does: Confirms the exact commit-tagged images, builds only application
+services, waits for DB-backed API readiness, and then recreates web. PostgreSQL
+and named volumes are not recreated. Stop and roll back if configuration, build,
+readiness, authentication, exposure, or persistence checks fail.
+
+After the validation checklist below passes, retain the previous release
+directory and API/web images for rollback. Do not use `docker compose down -v`.
 
 Validate all of the following before completion:
 
