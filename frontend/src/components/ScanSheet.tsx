@@ -8,8 +8,10 @@ import { ProposalCard, type ProposalCardItem } from "./ProposalCard";
 import { ProductFields, ProductLibrary } from "./ProductLibrary";
 import {
   candidateDraftIsUnchanged,
+  bindCandidateBarcode,
   createProduct,
   draftFromCandidate,
+  draftWithBoundCandidateBarcode,
   per100FromProduct,
   productFingerprint,
   sourceLabel,
@@ -27,6 +29,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const streamRef = useRef<MediaStream | null>(null);
   const stopScanRef = useRef<(() => void) | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [scanPurpose, setScanPurpose] = useState<"lookup" | "attach" | null>(null);
+  const [scanStarting, setScanStarting] = useState(false);
+  const [bindingBarcode, setBindingBarcode] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [proposal, setProposal] = useState<ProposalCardItem[] | null>(null);
   const [candidate, setCandidate] = useState<ProductCandidate | null>(null);
@@ -38,51 +43,126 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const [showLibrary, setShowLibrary] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const saveMutation = useRef<StableMutation | null>(null);
+  const candidateRef = useRef<ProductCandidate | null>(null);
+  const draftRef = useRef<ProductDraft | null>(null);
+  const mountedRef = useRef(false);
+  const startingScanRef = useRef(false);
+  const scanAttemptRef = useRef(0);
+  candidateRef.current = candidate;
+  draftRef.current = draft;
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
+      scanAttemptRef.current += 1;
       stopScanRef.current?.();
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
   const stopScan = () => {
+    scanAttemptRef.current += 1;
+    startingScanRef.current = false;
+    setScanStarting(false);
     stopScanRef.current?.();
     stopScanRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     setScanning(false);
+    setScanPurpose(null);
   };
 
-  const startScan = async () => {
-    setCandidate(null);
-    setDraft(null);
-    setComparison(null);
-    setNotFound(null);
-    setProposal(null);
-    setProposalProvenance(null);
+  const startScan = async (purpose: "lookup" | "attach" = "lookup") => {
+    if (startingScanRef.current || bindingBarcode || saving) return;
+    startingScanRef.current = true;
+    setScanStarting(true);
+    const scanAttempt = ++scanAttemptRef.current;
+    let stream: MediaStream | null = null;
+    if (purpose === "lookup") {
+      setCandidate(null);
+      setDraft(null);
+      setComparison(null);
+      setNotFound(null);
+      setProposal(null);
+      setProposalProvenance(null);
+    }
     setError(null);
-    setStatus(null);
+    setStatus(purpose === "attach" ? "Point the camera at this product's barcode." : null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       });
+      if (!mountedRef.current || scanAttemptRef.current !== scanAttempt) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
       const video = videoRef.current;
-      if (!video) return;
+      if (!video) {
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        return;
+      }
       video.srcObject = stream;
       await video.play();
+      if (!mountedRef.current || scanAttemptRef.current !== scanAttempt) {
+        stream.getTracks().forEach((track) => track.stop());
+        if (streamRef.current === stream) streamRef.current = null;
+        return;
+      }
       setScanning(true);
-      stopScanRef.current = await startBarcodeScan(video, (barcode) => {
-        void handleBarcode(barcode);
+      setScanPurpose(purpose);
+      const stopDecoder = await startBarcodeScan(video, (barcode) => {
+        void handleBarcode(barcode, purpose);
       });
+      if (!mountedRef.current || scanAttemptRef.current !== scanAttempt) {
+        stopDecoder();
+        stream.getTracks().forEach((track) => track.stop());
+        if (streamRef.current === stream) streamRef.current = null;
+        return;
+      }
+      stopScanRef.current = stopDecoder;
     } catch (err) {
-      setStatus(`Camera unavailable: ${err instanceof Error ? err.message : String(err)}`);
+      stream?.getTracks().forEach((track) => track.stop());
+      if (streamRef.current === stream) streamRef.current = null;
+      if (mountedRef.current && scanAttemptRef.current === scanAttempt) {
+        setScanning(false);
+        setScanPurpose(null);
+        setStatus(`Camera unavailable: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } finally {
+      if (scanAttemptRef.current === scanAttempt) {
+        startingScanRef.current = false;
+        setScanStarting(false);
+      }
     }
   };
 
-  const handleBarcode = async (barcode: string) => {
+  const handleBarcode = async (barcode: string, purpose: "lookup" | "attach") => {
     stopScan();
+    if (purpose === "attach") {
+      const currentCandidate = candidateRef.current;
+      const currentDraft = draftRef.current;
+      if (!currentCandidate || !currentDraft) return;
+      setBindingBarcode(true);
+      setError(null);
+      setStatus(`Adding barcode ${barcode}...`);
+      try {
+        const rebound = await bindCandidateBarcode(currentCandidate, barcode);
+        if (!mountedRef.current || candidateRef.current !== currentCandidate || draftRef.current !== currentDraft) return;
+        setCandidate(rebound);
+        setDraft(draftWithBoundCandidateBarcode(currentDraft, rebound));
+        setStatus(`Barcode ${barcode} added to this label candidate.`);
+      } catch (err) {
+        if (!mountedRef.current || candidateRef.current !== currentCandidate || draftRef.current !== currentDraft) return;
+        setStatus(null);
+        setError(`Barcode could not be added: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        if (mountedRef.current) setBindingBarcode(false);
+      }
+      return;
+    }
     setCandidate(null);
     setDraft(null);
     setComparison(null);
@@ -156,21 +236,27 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   };
 
   const logOnce = () => {
+    if (bindingBarcode || scanning || startingScanRef.current) return;
     const value = reviewValue();
     if (!value) return;
     setError(null);
+    const sourceType = value.nutrition_source === "vision_label"
+      ? "vision_label"
+      : value.nutrition_source === "open_food_facts" ? "barcode" : "manual";
     setProposal([{
       name: value.brand ? `${value.name} (${value.brand})`.slice(0, 255) : value.name,
       per100: value.per100,
-      quantityG: 100,
-      sourceType: candidate?.source === "vision_label" ? "vision_label" : "barcode",
+      sourceType,
+      quantityG: candidate?.suggested_quantity_g ?? 100,
+      quantityUnit: value.serving_unit.toLowerCase() === "ml" ? "ml" : "g",
     }]);
     setProposalProvenance(
-      `${candidate?.source === "vision_label" ? "Label extraction" : "Open Food Facts candidate"} · one-time log, not saved to your library`,
+      `${sourceLabel(value.nutrition_source)} · one-time log, not saved to your library`,
     );
   };
 
   const save = async (andLog: boolean) => {
+    if (bindingBarcode || scanning || startingScanRef.current) return;
     const value = reviewValue();
     if (!value) return;
     const fingerprint = productFingerprint({ operation: "create", value });
@@ -178,13 +264,17 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     setSaving(true);
     setError(null);
     try {
+      const suggestedQuantityG = candidate?.suggested_quantity_g ?? 100;
       const product = await createProduct(value, saveMutation.current.id);
       saveMutation.current = null;
       setCandidate(null);
       setDraft(null);
       setComparison(null);
       if (andLog) {
-        setProposal([proposalFromProduct(product)]);
+        const sourceType = product.nutrition_source === "vision_label"
+          ? "vision_label"
+          : product.nutrition_source === "open_food_facts" ? "barcode" : "manual";
+        setProposal([proposalFromProduct(product, suggestedQuantityG, sourceType)]);
         setProposalProvenance(`Accepted local product · ${sourceLabel(product.nutrition_source)}`);
       } else {
         setStatus(`${product.name} is now an accepted product.`);
@@ -218,7 +308,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">Scan</h2>
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onClick={() => setShowLibrary(true)}>
+          <Button variant="ghost" size="sm" onClick={() => { stopScan(); setShowLibrary(true); }}>
             <Library className="h-3.5 w-3.5" /> Library
           </Button>
           <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
@@ -233,7 +323,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       />
 
       <div className="grid grid-cols-2 gap-3">
-        <Button variant="outline" onClick={() => (scanning ? stopScan() : void startScan())}>
+        <Button variant="outline" onClick={() => (scanning ? stopScan() : void startScan())} disabled={saving || bindingBarcode}>
           <Camera className="h-4 w-4" />
           {scanning ? "Stop" : "Scan barcode"}
         </Button>
@@ -245,6 +335,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             accept="image/*"
             capture="environment"
             className="hidden"
+            disabled={saving || bindingBarcode}
             onChange={(e) => {
               void parseLabel(e.target.files?.[0], false);
               e.target.value = "";
@@ -289,7 +380,22 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
               Check flagged fields: {candidate.issues.map(issueLabel).join(", ")}.
             </p>
           )}
-          <ProductFields draft={draft} onChange={setDraft} />
+          <ProductFields
+            draft={draft}
+            onChange={setDraft}
+            onScanBarcode={candidate.source === "vision_label" && !candidate.barcode
+              ? () => (scanning && scanPurpose === "attach" ? stopScan() : void startScan("attach"))
+              : undefined}
+            barcodeScanning={scanning && scanPurpose === "attach"}
+            barcodeBinding={bindingBarcode}
+            barcodeScanDisabled={saving}
+          />
+
+          {candidate.suggested_quantity_g && (
+            <p className="rounded-lg bg-emerald-950/20 px-3 py-2 text-xs text-emerald-300/90">
+              Suggested portion from the label: {candidate.suggested_quantity_g} {candidate.serving_unit}. You can edit it in the Proposal Card before logging.
+            </p>
+          )}
 
           {candidate.source === "open_food_facts" && (
             <div className="space-y-2 rounded-lg border border-zinc-800 p-3">
@@ -334,9 +440,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             {!candidateDraftIsUnchanged(draft) && " (candidate fields were edited)"}
           </p>
           <div className="grid gap-2 sm:grid-cols-3">
-            <Button variant="outline" onClick={logOnce} disabled={saving}>Log once</Button>
-            <Button variant="outline" onClick={() => void save(false)} disabled={saving}>{saving ? "Saving..." : "Save product"}</Button>
-            <Button onClick={() => void save(true)} disabled={saving}>{saving ? "Saving..." : "Save and log"}</Button>
+            <Button variant="outline" onClick={logOnce} disabled={saving || bindingBarcode || scanning || scanStarting}>Log once</Button>
+            <Button variant="outline" onClick={() => void save(false)} disabled={saving || bindingBarcode || scanning || scanStarting}>{saving ? "Saving..." : "Save product"}</Button>
+            <Button onClick={() => void save(true)} disabled={saving || bindingBarcode || scanning || scanStarting}>{saving ? "Saving..." : "Save and log"}</Button>
           </div>
           <p className="text-[11px] text-zinc-600">Logging always opens the Proposal Card for final quantity review and confirmation.</p>
         </div>
@@ -362,13 +468,18 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
-function proposalFromProduct(product: Product): ProposalCardItem {
+function proposalFromProduct(
+  product: Product,
+  quantityG = 100,
+  sourceType: ProposalCardItem["sourceType"] = "barcode",
+): ProposalCardItem {
   return {
     name: (product.brand ? `${product.name} (${product.brand})` : product.name).slice(0, 255),
     per100: per100FromProduct(product),
-    quantityG: 100,
+    quantityG,
+    quantityUnit: product.serving_unit.toLowerCase() === "ml" ? "ml" : "g",
     foodItemId: product.id,
-    sourceType: "barcode",
+    sourceType,
   };
 }
 

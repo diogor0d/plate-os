@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   draftFromCandidate,
+  draftWithBoundCandidateBarcode,
   stableMutation,
   validateProductDraft,
   type ProductCandidate,
@@ -13,6 +14,7 @@ const candidate: ProductCandidate = {
   brand: "Example",
   serving_unit: "g",
   per100: { calories: 379, protein_g: 13.2, carbs_g: 67.7, fat_g: 6.5, fiber_g: 10.1 },
+  suggested_quantity_g: null,
   retrieved_at: "2026-09-02T12:00:00Z",
   confidence_score: null,
   issues: [],
@@ -59,6 +61,35 @@ describe("product drafts", () => {
       name: "Edited oats",
       nutrition_source: "manual",
       acceptance_proof: null,
+    });
+  });
+
+  it("binds a scanned barcode without changing label values or provenance", () => {
+    const labelCandidate: ProductCandidate = {
+      ...candidate,
+      source: "vision_label",
+      barcode: null,
+      suggested_quantity_g: 125,
+      acceptance_proof: "original-proof",
+    };
+    const draft = draftFromCandidate(labelCandidate);
+    const rebound = {
+      ...labelCandidate,
+      barcode: "5601234567890",
+      acceptance_proof: "rebound-proof",
+    };
+
+    const attached = draftWithBoundCandidateBarcode(draft, rebound);
+
+    expect(attached).toMatchObject({
+      barcode: "5601234567890",
+      calories: "379",
+      acceptanceProof: "rebound-proof",
+    });
+    expect(validateProductDraft(attached).value).toMatchObject({
+      barcode: "5601234567890",
+      nutrition_source: "vision_label",
+      acceptance_proof: "rebound-proof",
     });
   });
 

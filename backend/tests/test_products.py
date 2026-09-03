@@ -11,7 +11,7 @@ from app.api.routes import food, vision
 from app.models import FoodItem, FoodItemMutation, UserProfile
 from app.schemas.api import VisionParseRequest
 from app.schemas.llm_contracts import NutritionLabelExtraction, Per100Values
-from app.schemas.products import ProductArchive, ProductCreate, ProductUpdate
+from app.schemas.products import CandidateBarcodeBind, ProductArchive, ProductCreate, ProductUpdate
 from app.services.llm import LLMError
 from app.services.product_candidates import (
     CandidateProofError,
@@ -260,6 +260,9 @@ class FakeLLM:
         return NutritionLabelExtraction(
             product_name=None,
             basis="per_100g",
+            reference_unit="ml",
+            net_quantity=125,
+            net_quantity_unit="ml",
             calories=100,
             protein_g=0,
             carbs_g=20,
@@ -272,16 +275,54 @@ class FakeLLM:
 @pytest.mark.asyncio
 async def test_vision_is_stateless_candidate_and_only_echoes_scanner_barcode(monkeypatch):
     monkeypatch.setattr(vision, "get_llm", lambda _task: FakeLLM())
+    user = profile()
 
     result = await vision.parse_label(
-        VisionParseRequest(image_base64="abc"), "scanner-code", profile()
+        VisionParseRequest(image_base64="abc"), "scanner-code", user
     )
 
     assert result.source == "vision_label"
     assert result.barcode == "scanner-code"
     assert result.name == "Barcode scanner-code"
+    assert result.serving_unit == "ml"
+    assert result.suggested_quantity_g == 125
     assert result.issues == ["missing_name", "missing_protein", "missing_fiber"]
     assert result.acceptance_proof
+
+
+@pytest.mark.asyncio
+async def test_bind_barcode_preserves_label_candidate_and_reissues_proof(monkeypatch):
+    monkeypatch.setattr(vision, "get_llm", lambda _task: FakeLLM())
+    user = profile()
+    candidate = await vision.parse_label(VisionParseRequest(image_base64="abc"), None, user)
+
+    rebound = await food.bind_candidate_barcode(
+        CandidateBarcodeBind(candidate=candidate, barcode="5601234567890"),
+        user,
+    )
+
+    assert rebound.barcode == "5601234567890"
+    assert rebound.per100 == candidate.per100
+    assert rebound.suggested_quantity_g == 125
+    assert rebound.acceptance_proof != candidate.acceptance_proof
+    verify_candidate_proof(
+        rebound.acceptance_proof,
+        user_id=user.id,
+        source=rebound.source,
+        barcode=rebound.barcode,
+        name=rebound.name,
+        brand=rebound.brand,
+        serving_unit=rebound.serving_unit,
+        per100=rebound.per100,
+    )
+
+    tampered = candidate.model_copy(update={"name": "Tampered product"})
+    with pytest.raises(HTTPException) as exc_info:
+        await food.bind_candidate_barcode(
+            CandidateBarcodeBind(candidate=tampered, barcode="5601234567890"),
+            user,
+        )
+    assert exc_info.value.status_code == 422
 
 
 class FailingLLM:

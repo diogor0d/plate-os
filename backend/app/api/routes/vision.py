@@ -19,7 +19,7 @@ from app.schemas.api import VisionParseRequest
 from app.schemas.llm_contracts import NutritionLabelExtraction
 from app.schemas.products import ProductCandidate
 from app.services.llm import LLMError, describe_llm_error, get_llm
-from app.services.nutrition import normalize_extraction
+from app.services.nutrition import normalize_extraction, suggested_quantity_g
 from app.services.product_candidates import issue_candidate_proof
 
 router = APIRouter(prefix="/api/vision", tags=["vision"])
@@ -27,9 +27,12 @@ logger = logging.getLogger(__name__)
 
 VISION_SYSTEM = (
     "You are a nutrition-label OCR extractor. Extract the nutrition facts "
-    "table EXACTLY as printed: report the basis (per 100g or per serving) and "
-    "the serving size in g/ml if shown. Copy numbers verbatim; never scale, "
-    "convert units, or compute totals. If a value is not printed, use 0. "
+    "table EXACTLY as printed: report the basis (per 100g/ml or per serving), "
+    "whether its reference unit is g or ml, and the serving size if shown. Also "
+    "extract the explicit net weight or "
+    "volume for one package/unit when visible; for multipacks, do not multiply "
+    "unit count by unit size. Copy numbers verbatim; never scale, convert units, "
+    "or compute totals. If a nutrient value is not printed, use 0. "
     "Set confidence_score low when the image is blurry, angled, or partially "
     "cropped."
 )
@@ -80,7 +83,9 @@ async def parse_label(
         source="vision_label",
         barcode=barcode,
         name=name,
+        serving_unit=extraction.reference_unit,
         per100=per100,
+        suggested_quantity_g=suggested_quantity_g(extraction),
         retrieved_at=retrieved_at,
         confidence_score=extraction.confidence_score,
         issues=issues,

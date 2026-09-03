@@ -29,6 +29,7 @@ export interface ProductCandidate {
   brand: string | null;
   serving_unit: string;
   per100: Per100;
+  suggested_quantity_g: number | null;
   retrieved_at: string;
   confidence_score: number | null;
   issues: CandidateIssue[];
@@ -107,6 +108,19 @@ export function draftFromCandidate(candidate: ProductCandidate): ProductDraft {
   };
   draft.candidateFingerprint = boundDraftFingerprint(draft);
   return draft;
+}
+
+export function draftWithBoundCandidateBarcode(
+  draft: ProductDraft,
+  candidate: ProductCandidate,
+): ProductDraft {
+  const boundDraft = draftFromCandidate(candidate);
+  return {
+    ...draft,
+    barcode: candidate.barcode ?? "",
+    acceptanceProof: candidate.acceptance_proof,
+    candidateFingerprint: boundDraft.candidateFingerprint,
+  };
 }
 
 export function draftFromProduct(product: Product): ProductDraft {
@@ -208,6 +222,16 @@ export function candidateDraftIsUnchanged(draft: ProductDraft): boolean {
   return draft.nutritionSource !== "manual"
     && draft.acceptanceProof !== null
     && draft.candidateFingerprint === boundDraftFingerprint(draft);
+}
+
+export function bindCandidateBarcode(
+  candidate: ProductCandidate,
+  barcode: string,
+): Promise<ProductCandidate> {
+  return api<ProductCandidate>("/api/food-items/candidates/bind-barcode", {
+    method: "POST",
+    body: JSON.stringify({ candidate, barcode }),
+  });
 }
 
 export function stableMutation(

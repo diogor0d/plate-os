@@ -16,6 +16,7 @@ from app.models import FoodItem, FoodItemMutation, MealRoutine, MealRoutineItem,
 from app.schemas.products import (
     AcceptedResolution,
     BarcodeResolution,
+    CandidateBarcodeBind,
     CandidateResolution,
     NotFoundResolution,
     ProductArchive,
@@ -277,6 +278,43 @@ async def archive_food_item(
         raise HTTPException(status_code=409, detail="Product archive conflicted") from None
     await session.refresh(item)
     return item
+
+
+@router.post("/candidates/bind-barcode", response_model=ProductCandidate)
+async def bind_candidate_barcode(
+    body: CandidateBarcodeBind,
+    profile: UserProfile = Depends(get_current_profile),
+):
+    candidate = body.candidate
+    if candidate.source != "vision_label":
+        raise HTTPException(status_code=422, detail="Only label candidates can bind a barcode")
+    if candidate.barcode is not None:
+        raise HTTPException(status_code=409, detail="Candidate already has a barcode")
+    try:
+        verify_candidate_proof(
+            candidate.acceptance_proof,
+            user_id=profile.id,
+            source=candidate.source,
+            barcode=candidate.barcode,
+            name=candidate.name,
+            brand=candidate.brand,
+            serving_unit=candidate.serving_unit,
+            per100=candidate.per100,
+        )
+    except CandidateProofError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    rebound = candidate.model_copy(update={"barcode": body.barcode})
+    rebound.acceptance_proof = issue_candidate_proof(
+        user_id=profile.id,
+        source=rebound.source,
+        barcode=rebound.barcode,
+        name=rebound.name,
+        brand=rebound.brand,
+        serving_unit=rebound.serving_unit,
+        per100=rebound.per100,
+    )
+    return rebound
 
 
 @router.get("/barcode/{code}", response_model=BarcodeResolution)

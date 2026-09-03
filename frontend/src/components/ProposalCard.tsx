@@ -22,6 +22,7 @@ export interface ProposalCardItem {
   name: string;
   per100: Per100;
   quantityG: number;
+  quantityUnit?: "g" | "ml";
   confidence?: "high" | "medium" | "low";
   reasoning?: string;
   foodItemId?: string | null;
@@ -168,7 +169,7 @@ export function ProposalCard({
                   size="sm"
                   disabled={isCompleted}
                   onClick={() => step(idx, -10)}
-                  aria-label="Decrease 10g"
+                  aria-label={`Decrease 10 ${item.quantityUnit ?? "g"}`}
                 >
                   <Minus className="h-3 w-3" />
                 </Button>
@@ -189,13 +190,13 @@ export function ProposalCard({
                     )
                   }
                 />
-                <span className="text-xs text-zinc-500">g</span>
+                <span className="text-xs text-zinc-500">{item.quantityUnit ?? "g"}</span>
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={isCompleted}
                   onClick={() => step(idx, 10)}
-                  aria-label="Increase 10g"
+                  aria-label={`Increase 10 ${item.quantityUnit ?? "g"}`}
                 >
                   <Plus className="h-3 w-3" />
                 </Button>

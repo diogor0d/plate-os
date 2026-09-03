@@ -40,6 +40,7 @@ class ProductCandidate(BaseModel):
     brand: str | None = Field(default=None, max_length=255)
     serving_unit: str = Field(default="g", min_length=1, max_length=32)
     per100: Per100Values
+    suggested_quantity_g: float | None = Field(default=None, gt=0, le=10000)
     retrieved_at: datetime
     confidence_score: float | None = Field(default=None, ge=0, le=1)
     issues: list[Literal[
@@ -47,6 +48,13 @@ class ProductCandidate(BaseModel):
         "missing_fat", "missing_fiber",
     ]] = Field(default_factory=list, max_length=6)
     acceptance_proof: str = Field(min_length=1)
+
+
+class CandidateBarcodeBind(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    candidate: ProductCandidate
+    barcode: str = Field(min_length=1, max_length=64)
 
 
 class AcceptedResolution(BaseModel):

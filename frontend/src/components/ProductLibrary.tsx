@@ -1,6 +1,6 @@
 import { useDeferredValue, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Library, Pencil, Plus, Search, X } from "lucide-react";
+import { Archive, Library, Pencil, Plus, ScanLine, Search, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import {
@@ -26,10 +26,18 @@ export function ProductFields({
   draft,
   onChange,
   lockBarcode = false,
+  onScanBarcode,
+  barcodeScanning = false,
+  barcodeBinding = false,
+  barcodeScanDisabled = false,
 }: {
   draft: ProductDraft;
   onChange: (draft: ProductDraft) => void;
   lockBarcode?: boolean;
+  onScanBarcode?: () => void;
+  barcodeScanning?: boolean;
+  barcodeBinding?: boolean;
+  barcodeScanDisabled?: boolean;
 }) {
   const set = (key: keyof ProductDraft, value: string) => onChange({ ...draft, [key]: value });
   const nutrient = (
@@ -75,17 +83,25 @@ export function ProductFields({
             onChange={(event) => set("brand", event.target.value)}
           />
         </label>
-        <label className="block space-y-1.5">
+        <div className="block space-y-1.5">
           <span className="text-xs font-medium text-zinc-400">Barcode</span>
-          <input
-            className={inputClass}
-            maxLength={64}
-            disabled={lockBarcode}
-            value={draft.barcode}
-            onChange={(event) => set("barcode", event.target.value)}
-          />
+          <div className="flex gap-2">
+            <input
+              aria-label="Barcode"
+              className={inputClass}
+              maxLength={64}
+              disabled={lockBarcode}
+              value={draft.barcode}
+              onChange={(event) => set("barcode", event.target.value)}
+            />
+            {onScanBarcode && (
+              <Button type="button" variant="outline" onClick={onScanBarcode} disabled={barcodeBinding || barcodeScanDisabled}>
+                <ScanLine className="h-4 w-4" /> {barcodeBinding ? "Adding..." : barcodeScanning ? "Stop" : "Scan"}
+              </Button>
+            )}
+          </div>
           {lockBarcode && <span className="text-[11px] text-zinc-600">Barcode cannot be changed after acceptance.</span>}
-        </label>
+        </div>
       </div>
 
       <fieldset className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">

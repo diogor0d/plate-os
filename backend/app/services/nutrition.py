@@ -60,6 +60,16 @@ def normalize_extraction(e: NutritionLabelExtraction) -> Per100Values:
     return Per100Values(**{k: round1(v) for k, v in vals.items()})
 
 
+def suggested_quantity_g(e: NutritionLabelExtraction) -> float | None:
+    """Return a package quantity in the app's shared g/ml quantity scale."""
+    if e.net_quantity is not None and e.net_quantity_unit is not None:
+        factor = Decimal(1000) if e.net_quantity_unit in {"kg", "l"} else Decimal(1)
+        return float(canonical_quantity(_decimal(e.net_quantity) * factor))
+    if e.serving_size_g is not None and e.serving_size_g > 0:
+        return float(canonical_quantity(e.serving_size_g))
+    return None
+
+
 def scale_to_quantity(
     per100: Per100Values, quantity_g: float | Decimal
 ) -> dict[str, float]:

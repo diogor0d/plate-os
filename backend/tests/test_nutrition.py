@@ -1,7 +1,12 @@
 import pytest
 
 from app.schemas.llm_contracts import NutritionLabelExtraction, Per100Values
-from app.services.nutrition import normalize_extraction, scale_to_quantity, sum_totals
+from app.services.nutrition import (
+    normalize_extraction,
+    scale_to_quantity,
+    suggested_quantity_g,
+    sum_totals,
+)
 
 
 def make_extraction(**overrides) -> NutritionLabelExtraction:
@@ -43,6 +48,39 @@ class TestNormalizeExtraction:
                 serving_size_g=1,
                 calories=120,
             )
+
+
+class TestSuggestedQuantity:
+    def test_uses_printed_net_package_quantity(self):
+        extraction = make_extraction(net_quantity=125, net_quantity_unit="g")
+        assert suggested_quantity_g(extraction) == 125
+
+    def test_converts_large_units_in_application_code(self):
+        extraction = make_extraction(net_quantity=0.5, net_quantity_unit="kg")
+        assert suggested_quantity_g(extraction) == 500
+
+    def test_falls_back_to_printed_serving_size(self):
+        extraction = make_extraction(serving_size_g=150)
+        assert suggested_quantity_g(extraction) == 150
+
+    def test_rejects_net_unit_that_does_not_match_reference_density(self):
+        with pytest.raises(ValueError, match="must match"):
+            make_extraction(reference_unit="g", net_quantity=1, net_quantity_unit="l")
+
+    def test_rejects_net_quantity_over_proposal_limit_after_conversion(self):
+        with pytest.raises(ValueError, match="exceeds 10000"):
+            make_extraction(net_quantity=11, net_quantity_unit="kg")
+
+    @pytest.mark.parametrize(
+        "values",
+        [
+            {"net_quantity": 0.001, "net_quantity_unit": "g"},
+            {"serving_size_g": 0.001},
+        ],
+    )
+    def test_rejects_quantity_that_rounds_to_zero(self, values):
+        with pytest.raises(ValueError, match="too small"):
+            make_extraction(**values)
 
 
 class TestScaleToQuantity:

@@ -51,9 +51,21 @@ class NutritionLabelExtraction(BaseModel):
         description="Product/brand name if visible",
     )
     basis: Literal["per_100g", "per_serving"] = Field(description="Basis of the printed values")
+    reference_unit: Literal["g", "ml"] = Field(
+        default="g",
+        description="Whether the printed nutrition reference quantity is measured in grams or milliliters",
+    )
     serving_size_g: float | None = Field(
         default=None, ge=0, le=10000, allow_inf_nan=False,
         description="Explicit serving size in g/ml, if indicated"
+    )
+    net_quantity: float | None = Field(
+        default=None, gt=0, le=10000, allow_inf_nan=False,
+        description="Explicit printed net quantity for one package/unit, without multiplying multipacks",
+    )
+    net_quantity_unit: Literal["g", "kg", "ml", "l"] | None = Field(
+        default=None,
+        description="Unit printed with net_quantity",
     )
     calories: float = Field(ge=0, le=10000, allow_inf_nan=False, description="Energy in kcal at the stated basis")
     protein_g: float = Field(ge=0, le=10000, allow_inf_nan=False)
@@ -64,6 +76,19 @@ class NutritionLabelExtraction(BaseModel):
 
     @model_validator(mode="after")
     def validate_normalized_density(self) -> "NutritionLabelExtraction":
+        if self.serving_size_g is not None and 0 < self.serving_size_g < 0.005:
+            raise ValueError("serving_size_g is too small for the supported quantity precision")
+        if (self.net_quantity is None) != (self.net_quantity_unit is None):
+            raise ValueError("net_quantity and net_quantity_unit must be provided together")
+        if self.net_quantity is not None and self.net_quantity_unit is not None:
+            expected_units = {"g", "kg"} if self.reference_unit == "g" else {"ml", "l"}
+            if self.net_quantity_unit not in expected_units:
+                raise ValueError("net quantity unit must match the nutrition reference unit")
+            factor = 1000 if self.net_quantity_unit in {"kg", "l"} else 1
+            if self.net_quantity * factor < 0.005:
+                raise ValueError("normalized net quantity is too small for the supported quantity precision")
+            if self.net_quantity * factor > 10000:
+                raise ValueError("normalized net quantity exceeds 10000 g/ml")
         if self.basis == "per_serving":
             if self.serving_size_g is None or self.serving_size_g <= 0:
                 raise ValueError(
