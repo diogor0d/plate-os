@@ -105,7 +105,9 @@ async def test_create_is_explicit_audited_and_records_replay_ledger():
     session = MutationSession()
     proof = issue_candidate_proof(
         user_id=user.id,
-        source="open_food_facts",
+        source="ciqual",
+        source_id="15001",
+        source_version="2025-11-19",
         barcode="123",
         name="Accepted candidate",
         brand=None,
@@ -117,14 +119,18 @@ async def test_create_is_explicit_audited_and_records_replay_ledger():
         barcode="123",
         name="Accepted candidate",
         per100=per100(),
-        nutrition_source="open_food_facts",
+        nutrition_source="ciqual",
+        nutrition_source_id="15001",
+        nutrition_source_version="2025-11-19",
         acceptance_proof=proof,
     )
 
     result = await food.create_food_item(body, user, session)
 
     assert result.accepted_by_user_id == user.id
-    assert result.nutrition_source == "open_food_facts"
+    assert result.nutrition_source == "ciqual"
+    assert result.nutrition_source_id == "15001"
+    assert result.nutrition_source_version == "2025-11-19"
     assert result.version == 1
     mutation = session.mutations[(user.id, body.client_mutation_id)]
     assert mutation.operation == "create"
@@ -170,11 +176,28 @@ async def test_external_create_requires_matching_candidate_proof():
     with pytest.raises(HTTPException, match="Manual products cannot"):
         await food.create_food_item(manual, user, MutationSession())
 
+    false_provenance = body.model_copy(update={
+        "nutrition_source": "manual",
+        "acceptance_proof": None,
+        "nutrition_source_id": "claimed-record",
+    })
+    with pytest.raises(HTTPException, match="cannot claim source provenance"):
+        await food.create_food_item(false_provenance, user, MutationSession())
+
+    untraceable = body.model_copy(update={"nutrition_source": "ciqual"})
+    with pytest.raises(HTTPException, match="provenance is required"):
+        await food.create_food_item(untraceable, user, MutationSession())
+
 
 @pytest.mark.asyncio
-async def test_update_requires_current_version_and_preserves_provenance():
+async def test_update_requires_current_version_and_downgrades_external_provenance():
     user = profile()
-    item = product(version=3, nutrition_source="vision_label")
+    item = product(
+        version=3,
+        nutrition_source="ciqual",
+        nutrition_source_id="2040",
+        nutrition_source_version="2025-11-19",
+    )
     stale_session = MutationSession(selected=item)
     stale = ProductUpdate(
         client_mutation_id=uuid.uuid4(), expected_version=2, name="Edit", per100=per100()
@@ -187,7 +210,9 @@ async def test_update_requires_current_version_and_preserves_provenance():
     body = stale.model_copy(update={"client_mutation_id": uuid.uuid4(), "expected_version": 3})
     result = await food.update_food_item(item.id, body, user, MutationSession(selected=item))
     assert result.version == 4
-    assert result.nutrition_source == "vision_label"
+    assert result.nutrition_source == "manual"
+    assert result.nutrition_source_id is None
+    assert result.nutrition_source_version is None
 
 
 @pytest.mark.asyncio
@@ -224,6 +249,7 @@ def test_candidate_proof_rejects_tampering_expiry_and_source_mismatch():
     proof = issue_candidate_proof(
         user_id=user_id,
         source="open_food_facts",
+        source_id="123",
         barcode="123",
         name="Product",
         brand=None,
@@ -235,6 +261,7 @@ def test_candidate_proof_rejects_tampering_expiry_and_source_mismatch():
         "proof": proof,
         "user_id": user_id,
         "source": "open_food_facts",
+        "source_id": "123",
         "barcode": "123",
         "name": "Product",
         "brand": None,
@@ -247,6 +274,8 @@ def test_candidate_proof_rejects_tampering_expiry_and_source_mismatch():
         verify_candidate_proof(**{**common, "name": "Tampered"})
     with pytest.raises(CandidateProofError, match="does not match"):
         verify_candidate_proof(**{**common, "source": "vision_label"})
+    with pytest.raises(CandidateProofError, match="does not match"):
+        verify_candidate_proof(**{**common, "source_id": "changed"})
     with pytest.raises(CandidateProofError, match="expired"):
         verify_candidate_proof(
             **{**common, "now": datetime(2026, 9, 2, 12, 11, tzinfo=timezone.utc)}
@@ -309,6 +338,8 @@ async def test_bind_barcode_preserves_label_candidate_and_reissues_proof(monkeyp
         rebound.acceptance_proof,
         user_id=user.id,
         source=rebound.source,
+        source_id=rebound.source_id,
+        source_version=rebound.source_version,
         barcode=rebound.barcode,
         name=rebound.name,
         brand=rebound.brand,

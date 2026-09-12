@@ -22,6 +22,8 @@ class CandidateProofError(ValueError):
 def _candidate_fields(
     *,
     source: str,
+    source_id: str | None,
+    source_version: str | None,
     barcode: str | None,
     name: str,
     brand: str | None,
@@ -30,6 +32,8 @@ def _candidate_fields(
 ) -> dict[str, Any]:
     return {
         "source": source,
+        "source_id": source_id,
+        "source_version": source_version,
         "barcode": barcode,
         "name": name,
         "brand": brand,
@@ -50,6 +54,8 @@ def issue_candidate_proof(
     *,
     user_id: uuid.UUID,
     source: str,
+    source_id: str | None = None,
+    source_version: str | None = None,
     barcode: str | None,
     name: str,
     brand: str | None,
@@ -59,11 +65,13 @@ def issue_candidate_proof(
 ) -> str:
     issued_at = int(now.timestamp()) if now is not None else int(time.time())
     payload = {
-        "v": 1,
+        "v": 2,
         "user_id": str(user_id),
         "exp": issued_at + PROOF_TTL_SECONDS,
         **_candidate_fields(
             source=source,
+            source_id=source_id,
+            source_version=source_version,
             barcode=barcode,
             name=name,
             brand=brand,
@@ -83,6 +91,8 @@ def verify_candidate_proof(
     *,
     user_id: uuid.UUID,
     source: str,
+    source_id: str | None = None,
+    source_version: str | None = None,
     barcode: str | None,
     name: str,
     brand: str | None,
@@ -107,10 +117,12 @@ def verify_candidate_proof(
     if not isinstance(payload.get("exp"), int) or payload["exp"] <= current_time:
         raise CandidateProofError("candidate acceptance proof has expired")
     expected = {
-        "v": 1,
+        "v": 2,
         "user_id": str(user_id),
         **_candidate_fields(
             source=source,
+            source_id=source_id,
+            source_version=source_version,
             barcode=barcode,
             name=name,
             brand=brand,

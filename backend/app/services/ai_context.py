@@ -22,12 +22,14 @@ async def build_assistant_context(
         "target_protein_g": profile.target_protein_g,
         "target_carbs_g": profile.target_carbs_g,
         "target_fat_g": profile.target_fat_g,
+        "target_fiber_g": profile.target_fiber_g,
     }
     remaining = {
         "calories": profile.target_calories - consumed["calories"],
         "protein_g": profile.target_protein_g - consumed["protein_g"],
         "carbs_g": profile.target_carbs_g - consumed["carbs_g"],
         "fat_g": profile.target_fat_g - consumed["fat_g"],
+        "fiber_g": profile.target_fiber_g - consumed["fiber_g"],
     }
 
     context = {

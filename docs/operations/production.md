@@ -293,7 +293,7 @@ docker compose -f docker-compose.restore.yml --profile verification run --rm --n
 
 What it does: Creates a fresh drill project, decrypts into a FIFO, restores only
 into an empty isolated PostgreSQL volume, and requires restore success before the
-API can start. It accepts source revisions `0001` through `0005`, migrates the
+API can start. It accepts source revisions `0001` through `0007`, migrates the
 restored DB to current head through the normal API entrypoint, verifies readiness,
 confirms unauthenticated denial, logs in with the drill credential, and performs
 representative authenticated reads. `set -e` prevents verification after a

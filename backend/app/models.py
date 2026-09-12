@@ -45,6 +45,7 @@ class UserProfile(Base):
     target_protein_g: Mapped[int] = mapped_column(nullable=False, default=140)
     target_carbs_g: Mapped[int] = mapped_column(nullable=False, default=280)
     target_fat_g: Mapped[int] = mapped_column(nullable=False, default=65)
+    target_fiber_g: Mapped[int] = mapped_column(nullable=False, default=25)
     # IANA timezone used for midnight-to-midnight daily rollups (decision D14).
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="Europe/Lisbon")
     updated_at: Mapped[datetime] = mapped_column(
@@ -70,12 +71,14 @@ class FoodItem(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     brand: Mapped[str | None] = mapped_column(String(255))
     serving_unit: Mapped[str] = mapped_column(String(32), nullable=False, default="g")
-    calories_per_100: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
-    protein_per_100: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
-    carbs_per_100: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
-    fat_per_100: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
-    fiber_per_100: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False, default=0)
+    calories_per_100: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    protein_per_100: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    carbs_per_100: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    fat_per_100: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    fiber_per_100: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False, default=0)
     nutrition_source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    nutrition_source_id: Mapped[str | None] = mapped_column(String(64))
+    nutrition_source_version: Mapped[str | None] = mapped_column(String(32))
     accepted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user_profile.id", ondelete="set null")
     )

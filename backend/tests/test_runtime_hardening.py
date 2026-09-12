@@ -173,7 +173,7 @@ async def test_readiness_checks_database_schema_and_single_profile(
     monkeypatch.setattr(main_module, "SessionLocal", lambda: session)
 
     assert await main_module.ready() == {"status": "ready"}
-    assert session.calls == 7
+    assert session.calls == 9
 
 
 @pytest.mark.asyncio

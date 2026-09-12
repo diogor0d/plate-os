@@ -18,7 +18,7 @@ Nothing is logged until you confirm it.
 ---
 
 PlateOS is a mobile-first **and** desktop PWA for daily nutrition tracking and
-body recomposition. Three fast input paths remove the friction:
+body recomposition. Four reviewable input paths remove the friction:
 
 The **Plate Prompt** mark combines a shallow dish with a command prompt: meals
 go in, structured and reviewable nutrition data comes out. It reflects the
@@ -30,6 +30,7 @@ system rather than a stream of guesses.
 | 📷 | **Barcode scan** | Accepted library first → ephemeral Open Food Facts candidate → explicit review |
 | 🏷️ | **Label photo** | Vision LLM reads the nutrition table exactly as printed |
 | 💬 | **Freeform text** | *"1.5 cans of drained tuna with 100g pasta"* → parsed by the AI coach |
+| 🔎 | **Generic food search** | Versioned Anses Ciqual and Swedish Food Agency data → explicit review |
 
 Every path ends in an editable **Proposal Card**: adjust grams, watch totals
 recompute instantly, then confirm.
@@ -52,6 +53,10 @@ recompute instantly, then confirm.
   email infrastructure, no recovery links, nothing leaves your host.
 - **Timezone-correct days.** Daily budgets group by *your* local midnight
   (IANA tz), never UTC.
+- **Traceable open food data.** Generic-food candidates come from versioned
+  official Ciqual and Swedish Food Agency snapshots. Accepted products retain
+  the source record and release; attribution details are in
+  [`docs/data-sources.md`](docs/data-sources.md).
 - **Filterable statistics.** Explore custom date ranges, input sources, foods,
   nutrient trends, weekday patterns, macro share, and top contributors without
   exporting sensitive meal data to another service.

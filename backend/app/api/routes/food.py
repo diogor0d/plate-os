@@ -24,7 +24,9 @@ from app.schemas.products import (
     ProductCreate,
     ProductOut,
     ProductUpdate,
+    GenericFoodSource,
 )
+from app.services.food_catalogs import FoodCatalogError, load_catalog, search_catalog
 from app.services.openfoodfacts import OFFUpstreamError, fetch_product_by_barcode
 from app.services.product_candidates import (
     CandidateProofError,
@@ -122,7 +124,13 @@ async def create_food_item(
     if body.nutrition_source == "manual":
         if body.acceptance_proof is not None:
             raise HTTPException(status_code=422, detail="Manual products cannot use candidate proof")
+        if body.nutrition_source_id is not None or body.nutrition_source_version is not None:
+            raise HTTPException(status_code=422, detail="Manual products cannot claim source provenance")
     else:
+        if body.nutrition_source in ("ciqual", "swedish_food_agency") and (
+            body.nutrition_source_id is None or body.nutrition_source_version is None
+        ):
+            raise HTTPException(status_code=422, detail="Official catalogue provenance is required")
         if body.acceptance_proof is None:
             raise HTTPException(status_code=422, detail="External candidates require acceptance proof")
         try:
@@ -130,6 +138,8 @@ async def create_food_item(
                 body.acceptance_proof,
                 user_id=profile.id,
                 source=body.nutrition_source,
+                source_id=body.nutrition_source_id,
+                source_version=body.nutrition_source_version,
                 barcode=body.barcode,
                 name=body.name,
                 brand=body.brand,
@@ -151,6 +161,8 @@ async def create_food_item(
         fat_per_100=body.per100.fat_g,
         fiber_per_100=body.per100.fiber_g,
         nutrition_source=body.nutrition_source,
+        nutrition_source_id=body.nutrition_source_id,
+        nutrition_source_version=body.nutrition_source_version,
         accepted_by_user_id=profile.id,
         accepted_at=now,
         updated_at=now,
@@ -206,6 +218,10 @@ async def update_food_item(
     item.carbs_per_100 = body.per100.carbs_g
     item.fat_per_100 = body.per100.fat_g
     item.fiber_per_100 = body.per100.fiber_g
+    if item.nutrition_source != "manual":
+        item.nutrition_source = "manual"
+        item.nutrition_source_id = None
+        item.nutrition_source_version = None
     item.updated_at = datetime.now(timezone.utc)
     item.version += 1
     try:
@@ -295,6 +311,8 @@ async def bind_candidate_barcode(
             candidate.acceptance_proof,
             user_id=profile.id,
             source=candidate.source,
+            source_id=candidate.source_id,
+            source_version=candidate.source_version,
             barcode=candidate.barcode,
             name=candidate.name,
             brand=candidate.brand,
@@ -308,6 +326,8 @@ async def bind_candidate_barcode(
     rebound.acceptance_proof = issue_candidate_proof(
         user_id=profile.id,
         source=rebound.source,
+        source_id=rebound.source_id,
+        source_version=rebound.source_version,
         barcode=rebound.barcode,
         name=rebound.name,
         brand=rebound.brand,
@@ -315,6 +335,47 @@ async def bind_candidate_barcode(
         per100=rebound.per100,
     )
     return rebound
+
+
+@router.get("/candidates/search", response_model=list[ProductCandidate])
+async def search_food_candidates(
+    q: Annotated[str, Query(min_length=2, max_length=255)],
+    source: GenericFoodSource,
+    limit: Annotated[int, Query(ge=1, le=10)] = 10,
+    profile: UserProfile = Depends(get_current_profile),
+):
+    try:
+        catalog = load_catalog(source)
+        matches = search_catalog(source, q, limit)
+    except FoodCatalogError as exc:
+        raise HTTPException(status_code=503, detail="Food catalogue is unavailable") from exc
+    retrieved_at = datetime.now(timezone.utc)
+    candidates = []
+    for match in matches:
+        candidate = ProductCandidate(
+            source=source,
+            source_id=match.id,
+            source_version=catalog.version,
+            name=match.name,
+            brand=None,
+            per100=match.per100,
+            retrieved_at=retrieved_at,
+            acceptance_proof="pending",
+        )
+        candidate.acceptance_proof = issue_candidate_proof(
+            user_id=profile.id,
+            source=candidate.source,
+            source_id=candidate.source_id,
+            source_version=candidate.source_version,
+            barcode=candidate.barcode,
+            name=candidate.name,
+            brand=candidate.brand,
+            serving_unit=candidate.serving_unit,
+            per100=candidate.per100,
+            now=retrieved_at,
+        )
+        candidates.append(candidate)
+    return candidates
 
 
 @router.get("/barcode/{code}", response_model=BarcodeResolution)
@@ -344,6 +405,8 @@ async def get_food_item_by_barcode(
     retrieved_at = datetime.now(timezone.utc)
     candidate = ProductCandidate(
         source="open_food_facts",
+        source_id=code,
+        source_version=None,
         barcode=code,
         name=off.name,
         brand=off.brand,
@@ -355,6 +418,8 @@ async def get_food_item_by_barcode(
     candidate.acceptance_proof = issue_candidate_proof(
         user_id=_profile.id,
         source=candidate.source,
+        source_id=candidate.source_id,
+        source_version=candidate.source_version,
         barcode=candidate.barcode,
         name=candidate.name,
         brand=candidate.brand,

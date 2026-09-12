@@ -1,6 +1,6 @@
 # AGENTS.md — PlateOS Context for Agents
 
-**Last updated:** 2026-09-02 (Europe/Lisbon)
+**Last updated:** 2026-09-12 (Europe/Lisbon)
 **Maintainer rule:** any agent (or human) that changes the architecture, stack, schema, conventions, or completes a roadmap phase MUST (a) update this file in the same change and (b) record the reasoning in a new dated file under `docs/decisions/`. Never rewrite decision history — supersede it.
 
 ---
@@ -12,6 +12,7 @@ PlateOS is a **mobile-first, self-hosted PWA for daily nutrition tracking and bo
 1. **Barcode scan** → accepted library lookup, then an ephemeral Open Food Facts candidate
 2. **Label photo** → Vision LLM extracts the nutrition table
 3. **Freeform text** → conversational AI coach parses the meal ("1.5 cans of drained tuna with 100g pasta")
+4. **Generic search** → versioned Ciqual/Swedish official-data candidate
 
 Every meal acquisition path funnels through an **editable Proposal Card** before a meal log is persisted.
 
@@ -45,7 +46,7 @@ These are product laws, not preferences. If a change violates one, stop and reco
 ┌───────────────▼────────────────────────────────────┐
 │       api — FastAPI (Python 3.12, uvicorn)         │
 │  nutrition math · LLM gateway (OpenAI-compatible)  │
-│  OFF lookup+cache · HMAC cookie auth · SSE chat    │
+│ OFF + local official catalogues · auth · SSE chat │
 └──────┬──────────────────────────┬──────────────────┘
 ┌──────▼──────────┐    ┌──────────▼──────────────────┐
 │ db — Postgres 17│    │ LLM: OpenAI / Gemini-compat │
@@ -73,6 +74,7 @@ and restore drills use a separate internal-only Compose project (D31-D33).
 | LLM | one OpenAI-compatible client per task; text (coach) and vision (labels) resolve independently — UI overrides then env defaults, vision inherits text unless split (D34/D35) | D5, D34 |
 | Auth | password + HMAC-signed HttpOnly cookie; multi-user accounts with scrypt hashes, first account admin (D11 → D36) | D6, D11, D36 |
 | Barcode | @zxing/browser primary; BarcodeDetector fast path; retail GTIN formats/check digits only (D48) | D7, D48 |
+| Generic foods | Versioned, generated Ciqual and Swedish Food Agency snapshots; local search and proof-bound review | D52 |
 | Offline | Dexie queue, poison-pill protected | D8 |
 | Streaming | SSE (single structured call; deltas server-chunked) | D9 |
 | Deploy | Hardened Docker Compose (db + api + web/Caddy), loopback origin, external TLS | D12, D17, D29-D33 |
@@ -90,6 +92,7 @@ plate-os/
 ├── docs/operations/           ← production/backup/restore runbook
 ├── ops/backup/                ← encrypted pg_dump, guarded restore, verifier
 ├── scripts/generate_icons.py  ← stdlib PWA icon generator
+├── scripts/generate_food_catalogs.py ← deterministic official-data snapshots
 ├── backend/
 │   ├── app/
 │   │   ├── main.py            ← lifespan, liveness/readiness, profile seeding
@@ -106,9 +109,10 @@ plate-os/
 │   │       ├── runtime_settings.py ← Settings-screen provider state (file-backed)
 │   │       ├── llm.py         ← OpenAI-compatible gateway, per-task routing
 │   │       ├── openfoodfacts.py
+│   │       ├── food_catalogs.py ← local Ciqual/Swedish search
 │   │       ├── routines.py
 │   │       └── web_push.py
-│   ├── alembic/               ← env.py (async) + revisions 0001-0005
+│   ├── alembic/               ← env.py (async) + revisions 0001-0007
 │   ├── tests/                 ← math, validation, auth, LLM, integrity, runtime tests
 │   ├── Dockerfile             ← pinned non-root image; migrations then uvicorn
 │   ├── requirements.lock      ← exact production dependency resolution
@@ -141,7 +145,7 @@ plate-os/
 | `POST /auth/login` · `POST /auth/logout` | username-aware cookie session; password-only allowed while one account exists |
 | `GET /auth/me` · `GET/POST /users`, `PATCH /users/me/password`, `PATCH /users/{id}/password` | account identity; admin-only household management + local resets (D36) |
 | `GET/PUT /profile` | targets, anthropometrics, timezone |
-| `GET/POST/PATCH /food-items`, archive, barcode lookup, `POST /food-items/candidates/bind-barcode` | reviewed library + ephemeral OFF/label candidates; proof-preserving barcode enrichment |
+| `GET/POST/PATCH /food-items`, archive, barcode lookup, candidate search/bind | reviewed library + ephemeral OFF/label/Ciqual/Swedish candidates; proof-preserving acceptance |
 | `GET/POST /meal-logs`, `PATCH/DELETE /meal-logs/{id}` | CRUD; server-computed totals; optional replay-safe mutation UUID |
 | `GET /daily-summary?day=` | tz-local targets/consumed/remaining |
 | `GET /analytics/daily` | tz-aware ranges + source/food filters, summaries, history, source mix, top foods (D20/D38) |
@@ -162,6 +166,7 @@ Conventions: DTOs live under `app/schemas`; the current account profile is resol
 - Runtime provider config lives in `PLATEOS_RUNTIME_SETTINGS_FILE` (JSON, outside the DB/backups). API keys are write-only over the API; Settings mutations are cookie-session-only — the bearer token cannot reach them. After a restore drill, re-enter provider config (D35).
 - New LLM tasks = new Pydantic contract in `schemas/llm_contracts.py` + call via `LLMService.extract_json()` (JSON mode → validate → one corrective retry).
 - Assistant output is a strict D39/D41 block union (`meal_proposal`, `meal_plan_draft`, `goal_draft`, `analytics_navigation`, `evidence_insight`). Never add generic URL/method/payload actions or execute model output directly. Context is server-built, user-scoped, and mode-minimized; body measurements are goals-only.
+- Daily targets include calories, protein, carbohydrates, fat, and fiber. Fiber defaults to 25 g for new and migrated profiles and follows the same current-target (not effective-dated history) semantics as the other targets (D51).
 - The chat system prompt gets fresh context injected per turn (`build_context` in `routes/chat.py`): local datetime, today's consumed/remaining, last-3-days trend. Extend there, not by hand-editing prompts elsewhere.
 - Privacy: default assumption is that label photos may leave the host unless the resolved vision endpoint points at Ollama. Say this in any UI/docs touching vision features.
 
@@ -184,7 +189,7 @@ cp ../.env.example .env   # adjust
 
 **Production stack:** hardened Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin. API runs migrations on boot. Never reuse development credentials in this flow. Production runs commit `5cdce9a` without the optional push profile; it supersedes the initial content-addressed D41 artifact recorded by D42.
 
-**Verification expectations:** 203 pytest tests and 56 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, barcode validation, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 31 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The review database upgraded through `0005` and the local stack/build passed 2026-09-02. Production runs `5cdce9a`, remains on schema `0005`, and passed a real reasoning-enabled DeepSeek assistant-contract round-trip on 2026-09-03 (D50). The `dbf9d39` mobile shell and standalone viewport passed physical iPhone testing on 2026-09-03 (D46); real push delivery, authenticated edge access, production restore, and remaining iOS camera/offline behavior remain separate.
+**Verification expectations:** 214 pytest tests and 58 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, official food catalogues, barcode validation, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 32 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The review database upgraded through `0005` and the local stack/build passed 2026-09-02. Production runs `5cdce9a`, remains on schema `0005`, and passed a real reasoning-enabled DeepSeek assistant-contract round-trip on 2026-09-03 (D50). The `dbf9d39` mobile shell and standalone viewport passed physical iPhone testing on 2026-09-03 (D46); real push delivery, authenticated edge access, production restore, and remaining iOS camera/offline behavior remain separate.
 
 ## 8. Conventions & gotchas
 
@@ -193,6 +198,7 @@ cp ../.env.example .env   # adjust
 - **Windows dev host (Git Bash):** venv binaries at `.venv/Scripts/`, not `bin/`. npm may block postinstall scripts (esbuild) via `allow-scripts` — the build still works because platform binaries ship as optional deps; if a tool complains, `npm approve-scripts` it.
 - **iOS:** Safari has no `BarcodeDetector` (hence D7); camera requires HTTPS in production (fine behind the proxy, use `localhost` in dev); respect safe-area classes; keep `touch-action: manipulation` on interactive controls.
 - **Product barcodes:** camera decoding accepts only EAN-8, EAN-13, and UPC-A and verifies the GTIN check digit before lookup. Do not broaden formats without a concrete product use case and equivalent validation (D48).
+- **Official food catalogues:** regenerate only from the official inputs documented in `docs/data-sources.md`; retain source IDs, versions, checksums, attribution, and exact-value filtering. Search results remain ephemeral until explicit acceptance (D52).
 - **Mobile shell:** below `md`, the app owns a flex viewport (`100dvh` in-browser, `100lvh` in standalone mode); only its content pane scrolls, while `BottomNav` remains a normal-flow non-scrolling sibling. Do not restore viewport-fixed mobile navigation; page-height changes make it unstable in iOS standalone mode (D44-D46).
 - **SSE:** any new proxy layer in front must disable buffering (Caddy `flush_interval -1`, `X-Accel-Buffering: no` header already set). Long reasoning calls emit app-authored `progress` events; never stream provider chain of thought.
 - **Dexie queue:** only 429/5xx/network failures enqueue or retry. Direct permanent 4xx errors keep the Proposal Card open; queued permanent 4xx entries move to a visible failed state and do not block later rows. The backend mutation ledger is the cross-tab duplicate boundary.
@@ -230,6 +236,8 @@ cp ../.env.example .env   # adjust
 - [x] Homelab production deployment: commit `d12794a`, `0003 → 0005`, loopback origin, TLS/Access challenge, and pre/post encrypted backup checksums (D42, 2026-09-03)
 - [x] Physical iPhone PWA shell verification: stable bottom navigation and full standalone viewport without phantom browser-toolbar space (D44-D46, 2026-09-03)
 - [x] Label net-quantity proposals and proof-preserving barcode enrichment (D47, 2026-09-03)
+- [x] Persisted fiber targets across daily summaries, analytics, and AI goal drafts (D51, 2026-09-11)
+- [x] Versioned Ciqual and Swedish Food Agency generic-food search with proof-bound provenance (D52, 2026-09-12)
 - [ ] Production recovery operations: choose destination, schedule, retention, RPO/RTO, monitoring, and execute an authorized restore drill from a production backup
 - [ ] Real LLM round-trips (point `PLATEOS_LLM_BASE_URL` at OpenAI/Gemini/DeepSeek/Ollama and exercise vision + chat)
 - [ ] iOS device testing: camera in standalone PWA, install/offline behavior, safe areas

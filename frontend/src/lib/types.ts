@@ -10,12 +10,20 @@ export interface Per100 {
 
 export type SourceType = "vision_label" | "text_estimate" | "manual" | "barcode";
 
+export interface NutrientTotals {
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g: number;
+}
+
 export interface DailySummary {
   date: string;
   timezone: string;
-  targets: Record<string, number>;
-  consumed: Record<string, number>;
-  remaining: Record<string, number>;
+  targets: NutrientTotals;
+  consumed: NutrientTotals;
+  remaining: NutrientTotals;
 }
 
 export interface MealLog {
@@ -73,6 +81,7 @@ export interface UserProfile {
   target_protein_g: number;
   target_carbs_g: number;
   target_fat_g: number;
+  target_fiber_g: number;
   timezone: string;
 }
 
@@ -134,6 +143,7 @@ export interface AnalyticsTargets {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  fiber_g: number;
 }
 
 export interface AnalyticsSummary {

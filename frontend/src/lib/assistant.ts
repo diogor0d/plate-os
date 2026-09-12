@@ -34,6 +34,7 @@ export interface GoalTargets {
   target_protein_g: number;
   target_carbs_g: number;
   target_fat_g: number;
+  target_fiber_g: number;
 }
 
 export interface AssistantMealPlanSchedule {
@@ -164,8 +165,10 @@ export function parseAssistantBlock(value: unknown): AssistantBlock | null {
     const targets = value.proposed_targets;
     if (!finite(targets.target_calories, 800, 6000) || !finite(targets.target_protein_g, 20, 400) ||
         !finite(targets.target_carbs_g, 0, 800) || !finite(targets.target_fat_g, 20, 300) ||
+        !finite(targets.target_fiber_g, 10, 100) ||
         !Number.isInteger(targets.target_calories) || !Number.isInteger(targets.target_protein_g) ||
-        !Number.isInteger(targets.target_carbs_g) || !Number.isInteger(targets.target_fat_g)) return null;
+        !Number.isInteger(targets.target_carbs_g) || !Number.isInteger(targets.target_fat_g) ||
+        !Number.isInteger(targets.target_fiber_g)) return null;
     if (!Array.isArray(value.caveats) || value.caveats.length > 5 || !value.caveats.every((item) => text(item, 300))) return null;
     const caveats = value.caveats as string[];
     return { type: "goal_draft", proposed_targets: targets as unknown as GoalTargets, rationale: value.rationale, caveats };

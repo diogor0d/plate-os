@@ -137,6 +137,7 @@ class GoalTargets(BaseModel):
     target_protein_g: int = Field(ge=20, le=400)
     target_carbs_g: int = Field(ge=0, le=800)
     target_fat_g: int = Field(ge=20, le=300)
+    target_fiber_g: int = Field(ge=10, le=100)
 
 
 class MealProposalBlock(BaseModel):

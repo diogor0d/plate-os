@@ -107,9 +107,13 @@ async def ready():
             await session.scalar(select(MealLog.calories_per_100).limit(1))
             await session.scalar(select(MealLogMutation.request_fingerprint).limit(1))
             await session.scalar(select(FoodItem.nutrition_source).limit(1))
+            await session.scalar(
+                select(FoodItem.nutrition_source_id, FoodItem.nutrition_source_version).limit(1)
+            )
             await session.scalar(select(FoodItemMutation.request_fingerprint).limit(1))
             await session.scalar(select(MealOccurrence.user_id).limit(1))
             await session.scalar(select(PushSubscription.endpoint_fingerprint).limit(1))
+            await session.scalar(select(UserProfile.target_fiber_g).limit(1))
     except Exception:  # noqa: BLE001 - return a stable status without leaking DB details
         logger.exception("Readiness database check failed")
         return JSONResponse({"status": "not_ready"}, status_code=503)

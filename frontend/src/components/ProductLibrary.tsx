@@ -1,20 +1,24 @@
-import { useDeferredValue, useRef, useState } from "react";
+import { useDeferredValue, useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Library, Pencil, Plus, ScanLine, Search, X } from "lucide-react";
+import { Archive, Database, Library, Pencil, Plus, ScanLine, Search, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import {
   archiveProduct,
+  candidateSourceLabel,
   createProduct,
   draftFromProduct,
   emptyProductDraft,
   listProducts,
   productFingerprint,
   sourceLabel,
+  searchProductCandidates,
   stableMutation,
   updateProduct,
   validateProductDraft,
   type Product,
+  type GenericFoodSource,
+  type ProductCandidate,
   type ProductDraft,
   type StableMutation,
 } from "../lib/products";
@@ -201,14 +205,17 @@ function ProductEditor({
 export function ProductLibrary({
   onClose,
   onSelect,
+  onReviewCandidate,
 }: {
   onClose?: () => void;
   onSelect?: (product: Product) => void;
+  onReviewCandidate?: (candidate: ProductCandidate) => void;
 }) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query.trim());
   const [editing, setEditing] = useState<Product | "new" | null>(null);
+  const [showGenericSearch, setShowGenericSearch] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<Product | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [archiving, setArchiving] = useState(false);
@@ -289,6 +296,15 @@ export function ProductLibrary({
         </Button>
       </div>
 
+      {onReviewCandidate && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-3">
+          <Button variant="outline" className="w-full sm:w-auto" onClick={() => setShowGenericSearch((value) => !value)}>
+            <Database className="h-4 w-4" /> {showGenericSearch ? "Close generic search" : "Find generic food"}
+          </Button>
+          {showGenericSearch && <GenericFoodSearch onReview={onReviewCandidate} />}
+        </div>
+      )}
+
       {products.isPending && <p className="text-sm text-zinc-500">Loading products...</p>}
       {products.error && <p role="alert" className="text-sm text-red-400">{products.error.message}</p>}
       {products.data?.length === 0 && (
@@ -320,9 +336,9 @@ export function ProductLibrary({
               </div>
             </div>
             <p className="text-xs tabular-nums text-zinc-400">
-              {product.calories_per_100} kcal · {product.protein_per_100}g protein · {product.carbs_per_100}g carbs · {product.fat_per_100}g fat
+              {product.calories_per_100} kcal · {product.protein_per_100}g protein · {product.carbs_per_100}g carbs · {product.fat_per_100}g fat · {product.fiber_per_100}g fiber
             </p>
-            <p className="text-[11px] text-emerald-400/80">{sourceLabel(product.nutrition_source)} · version {product.version}</p>
+            <p className="text-[11px] text-emerald-400/80">{sourceLabel(product.nutrition_source, product.nutrition_source_version)}{product.nutrition_source_id ? ` · record ${product.nutrition_source_id}` : ""} · local version {product.version}</p>
           </Card>
         ))}
       </div>
@@ -339,5 +355,72 @@ export function ProductLibrary({
         </div>
       )}
     </section>
+  );
+}
+
+function GenericFoodSearch({ onReview }: { onReview: (candidate: ProductCandidate) => void }) {
+  const [source, setSource] = useState<GenericFoodSource>("ciqual");
+  const [query, setQuery] = useState("");
+  const [request, setRequest] = useState<{ query: string; source: GenericFoodSource } | null>(null);
+  const results = useQuery({
+    queryKey: ["generic-foods", request?.source, request?.query],
+    queryFn: () => searchProductCandidates(request!.query, request!.source),
+    enabled: request !== null,
+  });
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const value = query.trim();
+    if (value.length >= 2) setRequest({ query: value, source });
+  };
+
+  return (
+    <div className="mt-3 space-y-3 border-t border-zinc-800 pt-3">
+      <div>
+        <p className="text-xs font-medium text-zinc-300">Search official generic-food catalogues</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">Results are read-only candidates. Nothing is saved until you review and explicitly accept one.</p>
+      </div>
+      <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]" onSubmit={submit}>
+        <input
+          type="search"
+          className={inputClass}
+          minLength={2}
+          maxLength={255}
+          placeholder="e.g. chickpeas, salmon, oats"
+          aria-label="Search official generic foods"
+          value={query}
+          onChange={(event) => { setQuery(event.target.value); setRequest(null); }}
+        />
+        <select
+          className={inputClass}
+          aria-label="Generic food source"
+          value={source}
+          onChange={(event) => { setSource(event.target.value as GenericFoodSource); setRequest(null); }}
+        >
+          <option value="ciqual">Anses Ciqual</option>
+          <option value="swedish_food_agency">Swedish Food Agency</option>
+        </select>
+        <Button type="submit" disabled={query.trim().length < 2 || results.isFetching}>
+          <Search className="h-4 w-4" /> {results.isFetching ? "Searching..." : "Search"}
+        </Button>
+      </form>
+      {results.error && <p role="alert" className="text-xs text-red-400">{results.error.message}</p>}
+      {request && !results.isFetching && results.data?.length === 0 && (
+        <p className="text-xs text-zinc-500">No exact five-nutrient records matched this search.</p>
+      )}
+      <div className="grid gap-2 lg:grid-cols-2">
+        {results.data?.map((candidate) => (
+          <button
+            type="button"
+            key={`${candidate.source}:${candidate.source_id}`}
+            className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-left transition-colors hover:border-emerald-900 hover:bg-zinc-900"
+            onClick={() => onReview(candidate)}
+          >
+            <p className="text-sm font-semibold text-zinc-100">{candidate.name}</p>
+            <p className="mt-1 text-xs tabular-nums text-zinc-400">{candidate.per100.calories} kcal · {candidate.per100.protein_g}g protein · {candidate.per100.carbs_g}g carbs · {candidate.per100.fat_g}g fat · {candidate.per100.fiber_g}g fiber</p>
+            <p className="mt-2 text-[11px] text-emerald-400/80">{candidateSourceLabel(candidate.source, candidate.source_version)} · record {candidate.source_id}</p>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

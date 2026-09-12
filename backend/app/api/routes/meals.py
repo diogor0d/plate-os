@@ -294,6 +294,7 @@ async def daily_summary(
         "protein_g": profile.target_protein_g,
         "carbs_g": profile.target_carbs_g,
         "fat_g": profile.target_fat_g,
+        "fiber_g": profile.target_fiber_g,
     }
     remaining = {k: round(targets[k] - consumed[k], 1) for k in targets}
     return DailySummary(

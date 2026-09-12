@@ -276,13 +276,42 @@ def test_goal_draft_contains_complete_target_set():
                 "blocks": [
                     {
                         "type": "goal_draft",
-                        "proposed_targets": {"target_calories": 2200},
+                        "proposed_targets": {
+                            "target_calories": 2200,
+                            "target_protein_g": 140,
+                            "target_carbs_g": 250,
+                            "target_fat_g": 70,
+                        },
                         "rationale": "Protein consistency could improve.",
                         "requires_user_confirmation": True,
                     }
                 ],
             }
         )
+
+
+def test_goal_draft_accepts_complete_fiber_target():
+    response = AssistantHarnessResponse.model_validate(
+        {
+            "assistant_message": "Draft goals.",
+            "blocks": [
+                {
+                    "type": "goal_draft",
+                    "proposed_targets": {
+                        "target_calories": 2200,
+                        "target_protein_g": 140,
+                        "target_carbs_g": 250,
+                        "target_fat_g": 70,
+                        "target_fiber_g": 25,
+                    },
+                    "rationale": "Increase fiber consistently.",
+                    "requires_user_confirmation": True,
+                }
+            ],
+        }
+    )
+
+    assert response.blocks[0].proposed_targets.target_fiber_g == 25
 
 
 def test_goal_draft_rejects_unsafe_target_extremes():
@@ -298,6 +327,7 @@ def test_goal_draft_rejects_unsafe_target_extremes():
                             "target_protein_g": 0,
                             "target_carbs_g": 0,
                             "target_fat_g": 0,
+                            "target_fiber_g": 0,
                         },
                         "rationale": "Unsafe draft",
                         "requires_user_confirmation": True,
@@ -320,6 +350,7 @@ def test_goal_draft_rejects_oversized_caveat():
                             "target_protein_g": 140,
                             "target_carbs_g": 250,
                             "target_fat_g": 70,
+                            "target_fiber_g": 25,
                         },
                         "rationale": "Draft",
                         "caveats": ["x" * 301],

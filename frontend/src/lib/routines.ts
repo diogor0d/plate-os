@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 import type { Per100, SourceType } from "./types";
-import type { StableMutation } from "./products";
+import { productSourceToMealSource, type ProductSource, type StableMutation } from "./products";
 
 export type RoutineMode = "rough" | "defined";
 export type ScheduleFrequency = "daily" | "weekly";
@@ -20,7 +20,9 @@ export interface RoutineProduct {
   carbs_per_100: number;
   fat_per_100: number;
   fiber_per_100: number;
-  nutrition_source: "manual" | "open_food_facts" | "vision_label";
+  nutrition_source: ProductSource;
+  nutrition_source_id: string | null;
+  nutrition_source_version: string | null;
   accepted_at: string;
   updated_at: string;
   version: number;
@@ -379,7 +381,7 @@ export function routineToProposalItems(routine: Routine): RoutineProposalItem[] 
     },
     quantityG: quantity_g,
     foodItemId: product.id,
-    sourceType: product.nutrition_source === "open_food_facts" ? "barcode" : product.nutrition_source,
+    sourceType: productSourceToMealSource(product.nutrition_source),
   }));
 }
 

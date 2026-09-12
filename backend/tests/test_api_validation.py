@@ -3,9 +3,11 @@ from datetime import UTC, date
 import pytest
 from pydantic import ValidationError
 
+from app.api.routes import meals
 from app.api.routes.meals import day_bounds
 from app.config import Settings
-from app.schemas.api import MealLogCreate, MealLogPatch, UserProfileUpdate
+from app.models import UserProfile
+from app.schemas.api import DailySummary, MealLogCreate, MealLogPatch, UserProfileUpdate
 from app.schemas.llm_contracts import FoodItemProposal, MealPlanScheduleDraft, Per100Values
 
 
@@ -44,6 +46,55 @@ def test_validates_iana_timezones():
             timezone="Not/AZone",
             frequency="daily",
             start_date="2026-09-02",
+        )
+
+
+def test_validates_fiber_target():
+    assert UserProfileUpdate(target_fiber_g=25).target_fiber_g == 25
+    with pytest.raises(ValidationError):
+        UserProfileUpdate(target_fiber_g=-1)
+    with pytest.raises(ValidationError):
+        UserProfileUpdate(target_fiber_g=1001)
+
+
+@pytest.mark.asyncio
+async def test_daily_summary_includes_fiber_target_and_remaining(monkeypatch):
+    async def consumed_for_day(*_args):
+        return {
+            "calories": 1000.0,
+            "protein_g": 80.0,
+            "carbs_g": 120.0,
+            "fat_g": 40.0,
+            "fiber_g": 9.5,
+        }
+
+    profile = UserProfile(
+        weight_kg=70,
+        height_cm=175,
+        target_calories=2200,
+        target_protein_g=140,
+        target_carbs_g=250,
+        target_fat_g=70,
+        target_fiber_g=25,
+        timezone="Europe/Lisbon",
+    )
+    monkeypatch.setattr(meals, "consumed_for_day", consumed_for_day)
+
+    summary = await meals.daily_summary(date(2026, 9, 11), profile, object())
+
+    assert summary.targets.fiber_g == 25
+    assert summary.consumed.fiber_g == 9.5
+    assert summary.remaining.fiber_g == 15.5
+
+
+def test_daily_summary_requires_all_five_nutrients():
+    with pytest.raises(ValidationError):
+        DailySummary(
+            date="2026-09-11",
+            timezone="Europe/Lisbon",
+            targets={"calories": 2200, "protein_g": 140, "carbs_g": 250, "fat_g": 70},
+            consumed={"calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "fiber_g": 0},
+            remaining={"calories": 2200, "protein_g": 140, "carbs_g": 250, "fat_g": 70, "fiber_g": 25},
         )
 
 

@@ -39,6 +39,7 @@ export function TargetBars({ summary }: { summary: DailySummary | undefined }) {
       <Bar label="Protein" value={summary.consumed.protein_g} target={summary.targets.protein_g} unit="g" />
       <Bar label="Carbs" value={summary.consumed.carbs_g} target={summary.targets.carbs_g} unit="g" />
       <Bar label="Fat" value={summary.consumed.fat_g} target={summary.targets.fat_g} unit="g" />
+      <Bar label="Fiber" value={summary.consumed.fiber_g} target={summary.targets.fiber_g} unit="g" />
     </div>
   );
 }

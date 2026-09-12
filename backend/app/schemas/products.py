@@ -8,7 +8,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.llm_contracts import Per100Values
 
-ProductSource = Literal["manual", "open_food_facts", "vision_label"]
+ExternalProductSource = Literal[
+    "open_food_facts", "vision_label", "ciqual", "swedish_food_agency"
+]
+GenericFoodSource = Literal["ciqual", "swedish_food_agency"]
+ProductSource = Literal[
+    "manual", "open_food_facts", "vision_label", "ciqual", "swedish_food_agency"
+]
 
 
 class ProductOut(BaseModel):
@@ -25,6 +31,8 @@ class ProductOut(BaseModel):
     fat_per_100: float
     fiber_per_100: float
     nutrition_source: ProductSource
+    nutrition_source_id: str | None
+    nutrition_source_version: str | None
     accepted_at: datetime
     updated_at: datetime
     version: int
@@ -34,7 +42,9 @@ class ProductOut(BaseModel):
 class ProductCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    source: Literal["open_food_facts", "vision_label"]
+    source: ExternalProductSource
+    source_id: str | None = Field(default=None, max_length=64)
+    source_version: str | None = Field(default=None, max_length=32)
     barcode: str | None = Field(default=None, min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=255)
     brand: str | None = Field(default=None, max_length=255)
@@ -88,6 +98,8 @@ class ProductCreate(BaseModel):
     serving_unit: str = Field(default="g", min_length=1, max_length=32)
     per100: Per100Values
     nutrition_source: ProductSource
+    nutrition_source_id: str | None = Field(default=None, max_length=64)
+    nutrition_source_version: str | None = Field(default=None, max_length=32)
     acceptance_proof: str | None = None
 
 

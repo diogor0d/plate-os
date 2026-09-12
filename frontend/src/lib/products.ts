@@ -1,8 +1,9 @@
 import { api } from "./api";
 import { canonicalizePer100 } from "./nutrition";
-import type { Per100 } from "./types";
+import type { Per100, SourceType } from "./types";
 
-export type ProductSource = "manual" | "open_food_facts" | "vision_label";
+export type GenericFoodSource = "ciqual" | "swedish_food_agency";
+export type ProductSource = "manual" | "open_food_facts" | "vision_label" | GenericFoodSource;
 
 export interface Product {
   id: string;
@@ -16,6 +17,8 @@ export interface Product {
   fat_per_100: number;
   fiber_per_100: number;
   nutrition_source: ProductSource;
+  nutrition_source_id: string | null;
+  nutrition_source_version: string | null;
   accepted_at: string;
   updated_at: string;
   version: number;
@@ -23,7 +26,9 @@ export interface Product {
 }
 
 export interface ProductCandidate {
-  source: "open_food_facts" | "vision_label";
+  source: Exclude<ProductSource, "manual">;
+  source_id: string | null;
+  source_version: string | null;
   barcode: string | null;
   name: string;
   brand: string | null;
@@ -60,6 +65,8 @@ export interface ProductDraft {
   fat: string;
   fiber: string;
   nutritionSource: ProductSource;
+  nutritionSourceId: string | null;
+  nutritionSourceVersion: string | null;
   acceptanceProof: string | null;
   candidateFingerprint: string | null;
 }
@@ -71,6 +78,8 @@ export interface ValidProductDraft {
   serving_unit: string;
   per100: Per100;
   nutrition_source: ProductSource;
+  nutrition_source_id: string | null;
+  nutrition_source_version: string | null;
   acceptance_proof: string | null;
 }
 
@@ -103,6 +112,8 @@ export function draftFromCandidate(candidate: ProductCandidate): ProductDraft {
     fat: String(candidate.per100.fat_g),
     fiber: String(candidate.per100.fiber_g),
     nutritionSource: candidate.source,
+    nutritionSourceId: candidate.source_id,
+    nutritionSourceVersion: candidate.source_version,
     acceptanceProof: candidate.acceptance_proof,
     candidateFingerprint: null,
   };
@@ -136,6 +147,8 @@ export function draftFromProduct(product: Product): ProductDraft {
     fat: String(per100.fat_g),
     fiber: String(per100.fiber_g),
     nutritionSource: product.nutrition_source,
+    nutritionSourceId: product.nutrition_source_id,
+    nutritionSourceVersion: product.nutrition_source_version,
     acceptanceProof: null,
     candidateFingerprint: null,
   };
@@ -153,6 +166,8 @@ export function emptyProductDraft(): ProductDraft {
     fat: "0",
     fiber: "0",
     nutritionSource: "manual",
+    nutritionSourceId: null,
+    nutritionSourceVersion: null,
     acceptanceProof: null,
     candidateFingerprint: null,
   };
@@ -196,6 +211,8 @@ export function validateProductDraft(draft: ProductDraft):
       serving_unit: draft.servingUnit.trim(),
       per100: canonicalizePer100(per100),
       nutrition_source: externalProofIsValid ? draft.nutritionSource : "manual",
+      nutrition_source_id: externalProofIsValid ? draft.nutritionSourceId : null,
+      nutrition_source_version: externalProofIsValid ? draft.nutritionSourceVersion : null,
       acceptance_proof: externalProofIsValid ? draft.acceptanceProof : null,
     },
   };
@@ -204,6 +221,8 @@ export function validateProductDraft(draft: ProductDraft):
 function boundDraftFingerprint(draft: ProductDraft): string {
   return JSON.stringify({
     source: draft.nutritionSource,
+    source_id: draft.nutritionSourceId,
+    source_version: draft.nutritionSourceVersion,
     barcode: draft.barcode.trim() || null,
     name: draft.name.trim(),
     brand: draft.brand.trim() || null,
@@ -242,10 +261,26 @@ export function stableMutation(
   return current?.fingerprint === fingerprint ? current : { fingerprint, id: createId() };
 }
 
-export function sourceLabel(source: ProductSource): string {
-  if (source === "open_food_facts") return "Open Food Facts, reviewed by you";
-  if (source === "vision_label") return "Label photo, reviewed by you";
-  return "Entered manually";
+export function sourceLabel(source: ProductSource, version?: string | null): string {
+  return source === "manual"
+    ? "Entered manually"
+    : `${candidateSourceLabel(source, version)}, reviewed by you`;
+}
+
+export function candidateSourceLabel(
+  source: Exclude<ProductSource, "manual">,
+  version?: string | null,
+): string {
+  if (source === "open_food_facts") return "Open Food Facts candidate";
+  if (source === "vision_label") return "Vision label extraction";
+  if (source === "ciqual") return `Anses Ciqual ${version ?? "2025-11-19"} (Licence Ouverte 2.0)`;
+  return `Swedish Food Agency ${version ?? "2026-07-01"} (CC BY 4.0)`;
+}
+
+export function productSourceToMealSource(source: ProductSource): SourceType {
+  if (source === "open_food_facts") return "barcode";
+  if (source === "vision_label") return "vision_label";
+  return "manual";
 }
 
 export const productFingerprint = (value: object): string => JSON.stringify(value);
@@ -253,6 +288,15 @@ export const productFingerprint = (value: object): string => JSON.stringify(valu
 export async function listProducts(query = ""): Promise<Product[]> {
   const params = new URLSearchParams({ q: query, limit: "50" });
   return api<Product[]>(`/api/food-items?${params.toString()}`);
+}
+
+export async function searchProductCandidates(
+  query: string,
+  source: GenericFoodSource,
+  limit = 10,
+): Promise<ProductCandidate[]> {
+  const params = new URLSearchParams({ q: query, source, limit: String(limit) });
+  return api<ProductCandidate[]>(`/api/food-items/candidates/search?${params.toString()}`);
 }
 
 export async function createProduct(value: ValidProductDraft, mutationId: string): Promise<Product> {

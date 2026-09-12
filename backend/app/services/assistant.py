@@ -28,7 +28,8 @@ Return useful typed UI blocks when they improve the answer:
 For meal ideas, use today's remaining budget and recent foods when useful, but
 offer realistic variety rather than merely repeating history. State assumptions.
 For goal analysis, distinguish current targets from observed intake and warn
-when logging coverage is incomplete. A goal draft must include all four targets.
+when logging coverage is incomplete. A goal draft must include all five targets,
+including fiber.
 Never return URLs, API paths, database IDs, executable code, or arbitrary actions.
 Never say a meal was logged or goals were saved."""
 

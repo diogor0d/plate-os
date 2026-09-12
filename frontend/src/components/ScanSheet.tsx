@@ -8,12 +8,14 @@ import { ProposalCard, type ProposalCardItem } from "./ProposalCard";
 import { ProductFields, ProductLibrary } from "./ProductLibrary";
 import {
   candidateDraftIsUnchanged,
+  candidateSourceLabel,
   bindCandidateBarcode,
   createProduct,
   draftFromCandidate,
   draftWithBoundCandidateBarcode,
   per100FromProduct,
   productFingerprint,
+  productSourceToMealSource,
   sourceLabel,
   stableMutation,
   validateProductDraft,
@@ -240,9 +242,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     const value = reviewValue();
     if (!value) return;
     setError(null);
-    const sourceType = value.nutrition_source === "vision_label"
-      ? "vision_label"
-      : value.nutrition_source === "open_food_facts" ? "barcode" : "manual";
+    const sourceType = productSourceToMealSource(value.nutrition_source);
     setProposal([{
       name: value.brand ? `${value.name} (${value.brand})`.slice(0, 255) : value.name,
       per100: value.per100,
@@ -271,11 +271,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       setDraft(null);
       setComparison(null);
       if (andLog) {
-        const sourceType = product.nutrition_source === "vision_label"
-          ? "vision_label"
-          : product.nutrition_source === "open_food_facts" ? "barcode" : "manual";
+        const sourceType = productSourceToMealSource(product.nutrition_source);
         setProposal([proposalFromProduct(product, suggestedQuantityG, sourceType)]);
-        setProposalProvenance(`Accepted local product · ${sourceLabel(product.nutrition_source)}`);
+        setProposalProvenance(`Accepted local product · ${sourceLabel(product.nutrition_source, product.nutrition_source_version)}`);
       } else {
         setStatus(`${product.name} is now an accepted product.`);
       }
@@ -300,7 +298,20 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   };
 
   if (showLibrary) {
-    return <ProductLibrary onClose={() => setShowLibrary(false)} />;
+    return (
+      <ProductLibrary
+        onClose={() => setShowLibrary(false)}
+        onReviewCandidate={(selected) => {
+          setCandidate(selected);
+          setDraft(draftFromCandidate(selected));
+          setComparison(null);
+          setNotFound(null);
+          setProposal(null);
+          setProposalProvenance(null);
+          setShowLibrary(false);
+        }}
+      />
+    );
   }
 
   return (
@@ -370,7 +381,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             <div>
               <h3 className="text-sm font-semibold">Review external candidate</h3>
               <p className="mt-1 text-xs leading-relaxed text-amber-200/70">
-                {candidate.source === "open_food_facts" ? "Open Food Facts candidate" : "Vision label extraction"}. This is not in your product library and has not been saved.
+                {candidateSourceLabel(candidate.source, candidate.source_version)}. This is not in your product library and has not been saved.
               </p>
             </div>
           </div>
@@ -436,7 +447,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           )}
 
           <p className="text-[11px] text-zinc-500">
-            Source if accepted: {sourceLabel(candidateDraftIsUnchanged(draft) ? draft.nutritionSource : "manual")}
+            Source if accepted: {sourceLabel(candidateDraftIsUnchanged(draft) ? draft.nutritionSource : "manual", draft.nutritionSourceVersion)}
             {!candidateDraftIsUnchanged(draft) && " (candidate fields were edited)"}
           </p>
           <div className="grid gap-2 sm:grid-cols-3">

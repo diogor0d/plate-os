@@ -66,3 +66,20 @@ def test_0005_adds_composite_user_ownership_constraints():
         "fk_occurrence_logs_meal_user",
     ):
         assert constraint in text
+
+
+def test_0006_backfills_a_non_null_fiber_target():
+    text = (BACKEND / "alembic" / "versions" / "0006_user_profile_fiber_target.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'sa.Column("target_fiber_g", sa.Integer(), nullable=False, server_default="25")' in text
+    assert 'op.alter_column("user_profile", "target_fiber_g", server_default=None)' in text
+
+
+def test_0007_preserves_external_food_record_provenance():
+    text = (BACKEND / "alembic" / "versions" / "0007_food_source_provenance.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'sa.Column("nutrition_source_id", sa.String(64))' in text
+    assert 'sa.Column("nutrition_source_version", sa.String(32))' in text
+    assert "type_=sa.Numeric(14, 4)" in text

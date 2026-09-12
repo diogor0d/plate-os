@@ -10,6 +10,7 @@ const rows: { key: keyof GoalTargets; label: string; unit: string }[] = [
   { key: "target_protein_g", label: "Protein", unit: "g" },
   { key: "target_carbs_g", label: "Carbohydrates", unit: "g" },
   { key: "target_fat_g", label: "Fat", unit: "g" },
+  { key: "target_fiber_g", label: "Fiber", unit: "g" },
 ];
 
 export function GoalChangeReview({

@@ -40,7 +40,7 @@ const METRICS: Record<AnalyticsMetric, { label: string; unit: string; target?: k
   protein_g: { label: "Protein", unit: "g", target: "protein_g" },
   carbs_g: { label: "Carbohydrates", unit: "g", target: "carbs_g" },
   fat_g: { label: "Fat", unit: "g", target: "fat_g" },
-  fiber_g: { label: "Fiber", unit: "g" },
+  fiber_g: { label: "Fiber", unit: "g", target: "fiber_g" },
 };
 const inputClass = "rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 focus:border-emerald-600 focus:outline-none";
 

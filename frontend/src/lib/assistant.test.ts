@@ -50,21 +50,23 @@ describe("assistant harness parser", () => {
   });
 
   it("rejects unsafe or fractional goal drafts", () => {
-    const goal = (target_calories: number) => parseAssistantBlock({
+    const goal = (target_calories: number, target_fiber_g = 25) => parseAssistantBlock({
       type: "goal_draft",
-      proposed_targets: { target_calories, target_protein_g: 140, target_carbs_g: 250, target_fat_g: 70 },
+      proposed_targets: { target_calories, target_protein_g: 140, target_carbs_g: 250, target_fat_g: 70, target_fiber_g },
       rationale: "Draft",
       caveats: [],
     });
     expect(goal(0)).toBeNull();
     expect(goal(2200.5)).toBeNull();
+    expect(goal(2200, 9)).toBeNull();
+    expect(goal(2200, 25.5)).toBeNull();
     expect(goal(2200)?.type).toBe("goal_draft");
   });
 
   it("rejects oversized goal caveats", () => {
     expect(parseAssistantBlock({
       type: "goal_draft",
-      proposed_targets: { target_calories: 2200, target_protein_g: 140, target_carbs_g: 250, target_fat_g: 70 },
+      proposed_targets: { target_calories: 2200, target_protein_g: 140, target_carbs_g: 250, target_fat_g: 70, target_fiber_g: 25 },
       rationale: "Draft",
       caveats: ["x".repeat(301)],
     })).toBeNull();

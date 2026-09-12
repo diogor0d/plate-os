@@ -82,6 +82,7 @@ class UserProfileOut(BaseModel):
     target_protein_g: int
     target_carbs_g: int
     target_fat_g: int
+    target_fiber_g: int
     timezone: str
 
 
@@ -94,6 +95,7 @@ class UserProfileUpdate(BaseModel):
     target_protein_g: int | None = Field(default=None, ge=0, le=10000)
     target_carbs_g: int | None = Field(default=None, ge=0, le=10000)
     target_fat_g: int | None = Field(default=None, ge=0, le=10000)
+    target_fiber_g: int | None = Field(default=None, ge=0, le=1000)
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
 
     @field_validator("timezone")
@@ -121,7 +123,11 @@ class FoodItemOut(BaseModel):
     carbs_per_100: float
     fat_per_100: float
     fiber_per_100: float
-    nutrition_source: Literal["manual", "open_food_facts", "vision_label"]
+    nutrition_source: Literal[
+        "manual", "open_food_facts", "vision_label", "ciqual", "swedish_food_agency"
+    ]
+    nutrition_source_id: str | None
+    nutrition_source_version: str | None
     accepted_at: datetime
     updated_at: datetime
     version: int
@@ -137,7 +143,11 @@ class FoodItemCreate(BaseModel):
     brand: str | None = Field(default=None, max_length=255)
     serving_unit: str = Field(default="g", min_length=1, max_length=32)
     per100: Per100Values
-    nutrition_source: Literal["manual", "open_food_facts", "vision_label"] = "manual"
+    nutrition_source: Literal[
+        "manual", "open_food_facts", "vision_label", "ciqual", "swedish_food_agency"
+    ] = "manual"
+    nutrition_source_id: str | None = Field(default=None, max_length=64)
+    nutrition_source_version: str | None = Field(default=None, max_length=32)
 
 
 class MealLogCreate(BaseModel):
@@ -210,12 +220,28 @@ class MealLogPatch(BaseModel):
         return value
 
 
+class DailyTargets(BaseModel):
+    calories: int
+    protein_g: int
+    carbs_g: int
+    fat_g: int
+    fiber_g: int
+
+
+class DailyNutrients(BaseModel):
+    calories: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    fiber_g: float
+
+
 class DailySummary(BaseModel):
     date: str
     timezone: str
-    targets: dict[str, int]
-    consumed: dict[str, float]
-    remaining: dict[str, float]
+    targets: DailyTargets
+    consumed: DailyNutrients
+    remaining: DailyNutrients
 
 
 class DayTotals(BaseModel):
@@ -233,6 +259,7 @@ class AnalyticsTargets(BaseModel):
     protein_g: int
     carbs_g: int
     fat_g: int
+    fiber_g: int
 
 
 class AnalyticsSummary(BaseModel):

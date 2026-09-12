@@ -3,12 +3,15 @@ import {
   draftFromCandidate,
   draftWithBoundCandidateBarcode,
   stableMutation,
+  sourceLabel,
   validateProductDraft,
   type ProductCandidate,
 } from "./products";
 
 const candidate: ProductCandidate = {
   source: "open_food_facts",
+  source_id: "123",
+  source_version: null,
   barcode: "123",
   name: "Oats",
   brand: "Example",
@@ -28,10 +31,12 @@ describe("product drafts", () => {
       barcode: "123",
       name: "Oats",
       nutritionSource: "open_food_facts",
+      nutritionSourceId: "123",
       calories: "379",
     });
     expect(validateProductDraft(draft).value).toMatchObject({
       nutrition_source: "open_food_facts",
+      nutrition_source_id: "123",
       acceptance_proof: "proof",
     });
   });
@@ -49,6 +54,8 @@ describe("product drafts", () => {
         brand: null,
         serving_unit: "g",
         nutrition_source: "manual",
+        nutrition_source_id: null,
+        nutrition_source_version: null,
         acceptance_proof: null,
         per100: { calories: 379.1235, protein_g: 13.2, carbs_g: 67.7, fat_g: 6.5, fiber_g: 10.1 },
       },
@@ -96,6 +103,30 @@ describe("product drafts", () => {
   it("rejects values outside backend limits", () => {
     const result = validateProductDraft({ ...draftFromCandidate(candidate), protein: "100.1" });
     expect(result.error).toContain("0-100");
+  });
+
+  it("preserves official source record provenance until a candidate is edited", () => {
+    const ciqual = {
+      ...candidate,
+      source: "ciqual" as const,
+      source_id: "2040",
+      source_version: "2025-11-19",
+      barcode: null,
+    };
+    const draft = draftFromCandidate(ciqual);
+
+    expect(validateProductDraft(draft).value).toMatchObject({
+      nutrition_source: "ciqual",
+      nutrition_source_id: "2040",
+      nutrition_source_version: "2025-11-19",
+    });
+    expect(validateProductDraft({ ...draft, fiber: "0.4" }).value).toMatchObject({
+      nutrition_source: "manual",
+      nutrition_source_id: null,
+      nutrition_source_version: null,
+    });
+    expect(sourceLabel("ciqual", "2025-11-19")).toContain("Licence Ouverte 2.0");
+    expect(sourceLabel("swedish_food_agency", "2026-07-01")).toContain("CC BY 4.0");
   });
 });
 

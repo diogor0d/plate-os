@@ -28,6 +28,8 @@ const product = {
   fat_per_100: 7,
   fiber_per_100: 10,
   nutrition_source: "open_food_facts" as const,
+  nutrition_source_id: "123",
+  nutrition_source_version: null,
   accepted_at: "2026-09-01T00:00:00Z",
   updated_at: "2026-09-01T00:00:00Z",
   version: 1,
@@ -65,6 +67,20 @@ describe("routine helpers", () => {
     })).toContain("only once");
     expect(validateRoutineDraft({ ...definedDraft, items: [{ product, quantityG: 0 }] }))
       .toContain("Quantities");
+  });
+
+  it("keeps generic catalogue provenance on the product, not the meal source", () => {
+    const routine = {
+      ...({ mode: "defined", items: [] } as unknown as Routine),
+      mode: "defined" as const,
+      items: [{
+        position: 0,
+        quantity_g: 100,
+        product: { ...product, nutrition_source: "ciqual" as const },
+      }],
+    };
+
+    expect(routineToProposalItems(routine)[0].sourceType).toBe("manual");
   });
 
   it("validates recurrence-specific schedule fields", () => {
