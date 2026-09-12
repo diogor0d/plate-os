@@ -2,11 +2,12 @@
 
 ## Status and evidence boundary
 
-- Runtime state: `VERIFIED` on 2026-09-03 at the approved homelab target. Public
-  repository commit `5cdce9a` runs as healthy `db`, `api`, and `web` services
-  with a loopback-only origin and schema `0005`. The configured DeepSeek provider
-  passed a real reasoning-enabled, schema-validated assistant round-trip. It
-  supersedes the initial content-addressed D41 deployment recorded by D42.
+- Runtime state: `VERIFIED` on 2026-09-12 at the approved homelab target. Public
+  repository commit `539d17bbdf9d0d53ab730c561fdbf4f2ef7a833b` runs as healthy
+  `db`, `api`, and `web` services with a loopback-only origin and schema `0007`.
+  Fiber-target reads and both official-catalogue searches passed against the
+  production database. This D53 release supersedes the reasoning-enabled
+  `5cdce9a` release; that provider round-trip was not repeated during D53.
 - Intended target: the operator's approved Ubuntu Docker host. Hostnames,
   addresses, and tunnel specifics live in the operator's private homelab
   inventory, deliberately outside this public repository.
@@ -30,13 +31,24 @@
   recoverability claim: decryptability, independent retention, scheduling,
   monitoring, and an isolated restore from a production archive remain
   `UNVERIFIED`.
+- `VERIFIED` on 2026-09-12: the D53 post-migration encrypted archive
+  `plateos-20260912T163200Z.dump.age` was published and its ciphertext checksum
+  passed. The required fresh pre-migration backup did not complete: when the old
+  backup image rejected the database, schema `0007` was already present and the
+  API/web containers were absent. The exact event ordering remains `UNVERIFIED`.
+  Do not treat this deployment as recovery or rollback evidence; older schema
+  `0005` archives remain separate historical recovery points.
 - `VERIFIED` on 2026-09-03: operator testing on a physical iPhone running the
   identified `dbf9d39` PWA confirmed stable bottom navigation and full standalone
   viewport coverage without the former toolbar-sized blank region.
-- `UNVERIFIED`: authenticated end-to-end edge access, denied origin-bypass paths,
-  firewall behavior, monitoring, backup schedule/retention, RPO/RTO, production
-  restore, real Web Push delivery, and remaining iOS camera/offline behavior. The
-  optional push worker remains disabled pending separately managed key material.
+- `VERIFIED` on 2026-09-12: the external route returned the expected Cloudflare
+  Access challenge, the host published only `127.0.0.1:18100`, and a LAN request
+  to the same port timed out. VPN/IPv6 bypass paths and effective firewall policy
+  remain `UNVERIFIED`.
+- `UNVERIFIED`: authenticated end-to-end edge access, monitoring, backup
+  schedule/retention, RPO/RTO, production restore, real Web Push delivery, and
+  remaining iOS camera/offline behavior. The optional push worker remains disabled
+  pending separately managed key material.
 - Before choosing `PLATEOS_PORT`, perform an authorized current-listener check
   on the target host and record the binding in an exposure matrix; never assume
   a documented or previously seen port is still free.

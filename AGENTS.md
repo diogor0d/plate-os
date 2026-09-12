@@ -187,9 +187,9 @@ cp ../.env.example .env   # adjust
 
 **Local review stack:** `docker compose -f docker-compose.dev.yml up --build --wait` serves `http://127.0.0.1:8081` with disposable `admin` / `changeme` credentials and isolated `plateos-dev` volumes (D40). Use `down` without `-v` to preserve review data.
 
-**Production stack:** hardened Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin. API runs migrations on boot. Never reuse development credentials in this flow. Production runs commit `5cdce9a` without the optional push profile; it supersedes the initial content-addressed D41 artifact recorded by D42.
+**Production stack:** hardened Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin. API runs migrations on boot. Never reuse development credentials in this flow. Production runs commit `539d17b` at schema `0007` without the optional push profile (D53); it supersedes the reasoning-enabled `5cdce9a` release.
 
-**Verification expectations:** 214 pytest tests and 58 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, official food catalogues, barcode validation, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 32 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. The review database upgraded through `0005` and the local stack/build passed 2026-09-02. Production runs `5cdce9a`, remains on schema `0005`, and passed a real reasoning-enabled DeepSeek assistant-contract round-trip on 2026-09-03 (D50). The `dbf9d39` mobile shell and standalone viewport passed physical iPhone testing on 2026-09-03 (D46); real push delivery, authenticated edge access, production restore, and remaining iOS camera/offline behavior remain separate.
+**Verification expectations:** 214 pytest tests and 58 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, official food catalogues, barcode validation, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 32 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. Production runs `539d17b` at schema `0007`; health/readiness, password auth, loopback-only origin, fiber summary, both catalogue searches, release identity, and a post-migration encrypted-backup checksum passed on 2026-09-12 (D53). A fresh pre-migration backup did not complete because the schema had already advanced unexpectedly, so this deployment is not production-restore evidence. The reasoning-enabled DeepSeek round-trip remains verified against the preceding `5cdce9a` release (D50). The `dbf9d39` mobile shell and standalone viewport passed physical iPhone testing on 2026-09-03 (D46); real push delivery, authenticated edge access, production restore, and remaining iOS camera/offline behavior remain separate.
 
 ## 8. Conventions & gotchas
 
@@ -211,7 +211,7 @@ cp ../.env.example .env   # adjust
 - **Containers:** base images use multi-platform index digests, Python production installs `requirements.lock`, frontend uses `npm ci --ignore-scripts`, and runtimes are non-root/read-only with bounded logs. Update pins and lockfiles intentionally together.
 - **Recovery:** never archive live `pgdata`. Use the opt-in encrypted `pg_dump` job and the separate restore project. The backup refuses an uninitialized/unsupported DB or invalid single-profile state and publishes ciphertext only after its checksum sidecar. Restore emptiness inspection relies on PostgreSQL's normal-object OID boundary and must be revalidated with a database major-version pin change. A synthetic local drill passes, but tooling/local evidence is not a production backup; do not say "backed up" until monitored production backups, independent retention, and an isolated application restore are verified.
 
-## 9. Roadmap status (as of 2026-09-03)
+## 9. Roadmap status (as of 2026-09-12)
 
 - [x] Phase 1 — scaffold, data layer, CRUD, auth, docker-compose
 - [x] Phase 2 — barcode + label pipelines, vision endpoint, downscaler *(live OFF lookup verified)*
@@ -238,6 +238,7 @@ cp ../.env.example .env   # adjust
 - [x] Label net-quantity proposals and proof-preserving barcode enrichment (D47, 2026-09-03)
 - [x] Persisted fiber targets across daily summaries, analytics, and AI goal drafts (D51, 2026-09-11)
 - [x] Versioned Ciqual and Swedish Food Agency generic-food search with proof-bound provenance (D52, 2026-09-12)
+- [x] Production deployment of fiber targets and official-food search: commit `539d17b`, schema `0007`, healthy loopback runtime, and post-migration backup checksum (D53, 2026-09-12; pre-migration backup gate discrepancy retained as an open recovery risk)
 - [ ] Production recovery operations: choose destination, schedule, retention, RPO/RTO, monitoring, and execute an authorized restore drill from a production backup
 - [ ] Real LLM round-trips (point `PLATEOS_LLM_BASE_URL` at OpenAI/Gemini/DeepSeek/Ollama and exercise vision + chat)
 - [ ] iOS device testing: camera in standalone PWA, install/offline behavior, safe areas
