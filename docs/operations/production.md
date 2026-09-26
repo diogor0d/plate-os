@@ -2,12 +2,12 @@
 
 ## Status and evidence boundary
 
-- Runtime state: `VERIFIED` on 2026-09-12 at the approved homelab target. Public
-  repository commit `539d17bbdf9d0d53ab730c561fdbf4f2ef7a833b` runs as healthy
-  `db`, `api`, and `web` services with a loopback-only origin and schema `0007`.
-  Fiber-target reads and both official-catalogue searches passed against the
-  production database. This D53 release supersedes the reasoning-enabled
-  `5cdce9a` release; that provider round-trip was not repeated during D53.
+- Runtime state: `VERIFIED` on 2026-09-26 at the approved homelab target. Public
+  repository commit `cb41cd77f84765028ddbfe2c7d0ed97e71745e02` runs as healthy
+  `db`, `api`, and `web` services with a loopback-only origin and schema `0007`
+  (D55). The prior `539d17b` release's fiber-target and official-catalogue
+  checks passed on 2026-09-12; D55 did not repeat those authenticated reads.
+  The prior release directory and API/web images remain available for rollback.
 - Intended target: the operator's approved Ubuntu Docker host. Hostnames,
   addresses, and tunnel specifics live in the operator's private homelab
   inventory, deliberately outside this public repository.
@@ -45,6 +45,12 @@
   Access challenge, the host published only `127.0.0.1:18100`, and a LAN request
   to the same port timed out. VPN/IPv6 bypass paths and effective firewall policy
   remain `UNVERIFIED`.
+- `VERIFIED` on 2026-09-26: fresh pre-change and post-change encrypted archives
+  were published and their ciphertext checksums passed. The API and web images
+  carried the exact `cb41cd77` commit tag; DB-backed readiness, unauthenticated
+  API denial, service worker, release identity, loopback binding, and the external
+  Cloudflare Access challenge passed (D55). Decryptability and an isolated
+  production-archive restore remain `UNVERIFIED`.
 - `UNVERIFIED`: authenticated end-to-end edge access, monitoring, backup
   schedule/retention, RPO/RTO, production restore, real Web Push delivery, and
   remaining iOS camera/offline behavior. The optional push worker remains disabled
