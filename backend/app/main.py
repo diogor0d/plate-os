@@ -23,6 +23,25 @@ from app.services.accounts import hash_password
 
 logger = logging.getLogger("plateos")
 
+# One database round trip checks account presence and all migration-sensitive
+# columns. Scalar subqueries still resolve their tables and columns when empty.
+READINESS_QUERY = select(func.count(UserProfile.id)).select_from(UserProfile).add_columns(
+    *(
+        select(column).limit(1).scalar_subquery()
+        for column in (
+            MealLog.calories_per_100,
+            MealLogMutation.request_fingerprint,
+            FoodItem.nutrition_source,
+            FoodItem.nutrition_source_id,
+            FoodItem.nutrition_source_version,
+            FoodItemMutation.request_fingerprint,
+            MealOccurrence.user_id,
+            PushSubscription.endpoint_fingerprint,
+            UserProfile.target_fiber_g,
+        )
+    )
+)
+
 
 async def ensure_bootstrap_accounts() -> None:
     """Seed the admin account, or backfill credentials onto a pre-0003 row
@@ -99,21 +118,10 @@ async def health():
 
 @app.get("/api/ready", tags=["meta"])
 async def ready():
-    """Readiness: expected schema is queryable and one profile exists."""
+    """Readiness: expected schema is queryable and an account exists."""
     try:
         async with SessionLocal() as session:
-            profile_count = await session.scalar(select(func.count()).select_from(UserProfile))
-            # Probe columns introduced by the current schema, including on empty tables.
-            await session.scalar(select(MealLog.calories_per_100).limit(1))
-            await session.scalar(select(MealLogMutation.request_fingerprint).limit(1))
-            await session.scalar(select(FoodItem.nutrition_source).limit(1))
-            await session.scalar(
-                select(FoodItem.nutrition_source_id, FoodItem.nutrition_source_version).limit(1)
-            )
-            await session.scalar(select(FoodItemMutation.request_fingerprint).limit(1))
-            await session.scalar(select(MealOccurrence.user_id).limit(1))
-            await session.scalar(select(PushSubscription.endpoint_fingerprint).limit(1))
-            await session.scalar(select(UserProfile.target_fiber_g).limit(1))
+            profile_count = (await session.execute(READINESS_QUERY)).one()[0]
     except Exception:  # noqa: BLE001 - return a stable status without leaking DB details
         logger.exception("Readiness database check failed")
         return JSONResponse({"status": "not_ready"}, status_code=503)

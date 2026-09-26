@@ -13,6 +13,7 @@ import {
   getMealLogQueueState,
   getOccurrenceCompletionState,
   normalizePendingMealLog,
+  postConfirmedMealLog,
   recordOccurrenceCompletionAttempt,
   shouldQueueMealLogError,
 } from "./db";
@@ -185,6 +186,27 @@ describe("offline meal queue", () => {
     expect(shouldQueueMealLogError(new ApiError(503, "down"))).toBe(true);
     expect(shouldQueueMealLogError(new ApiError(401, "login"))).toBe(false);
     expect(shouldQueueMealLogError(new ApiError(422, "invalid"))).toBe(false);
+  });
+
+  it("binds direct confirmation to the account that reviewed the proposal", async () => {
+    const meal = payload("Oats");
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
+      new Headers(init?.headers).get(EXPECTED_OWNER_HEADER) === accountA
+        ? new Response(
+            JSON.stringify({ detail: "Authenticated account does not match queued meal owner" }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          )
+        : new Response("{}", { status: 201 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(postConfirmedMealLog(accountA, meal)).rejects.toMatchObject({ status: 409 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [path, init] = fetchMock.mock.calls[0];
+    expect(path).toBe("/api/meal-logs");
+    expect(new Headers(init?.headers).get(EXPECTED_OWNER_HEADER)).toBe(accountA);
+    expect(JSON.parse(init?.body as string)).toEqual(meal);
+    expect(await db.pendingMealLogs.count()).toBe(0);
   });
 
   it("durably resumes exact occurrence meal and completion mutations after ambiguity", async () => {

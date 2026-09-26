@@ -51,8 +51,8 @@ const PRESETS: Preset[] = [
     id: "deepseek",
     label: "DeepSeek",
     baseUrl: "https://api.deepseek.com",
-    textModel: "deepseek-v4-flash",
-    visionModel: "deepseek-v4-flash-vision-exp",
+    textModel: "deepseek-flash",
+    visionModel: "deepseek-flash",
   },
 ];
 
@@ -60,6 +60,7 @@ const eyebrow = "text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-5
 const field =
   "w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none";
 const monoField = `${field} font-mono text-xs`;
+const providerUrl = (value: string) => value.trim().replace(/\/+$/, "");
 
 function statusLine(s: TaskStatus) {
   if (s?.busy)
@@ -136,7 +137,7 @@ function ProviderFields(props: {
   vision: boolean;
 }) {
   const { baseUrl, model, onBaseUrl, onModel, vision } = props;
-  const matchedPreset = PRESETS.find((p) => p.baseUrl === baseUrl.trim());
+  const matchedPreset = PRESETS.find((p) => p.baseUrl === providerUrl(baseUrl));
   return (
     <div className="space-y-3">
       <div>
@@ -162,7 +163,7 @@ function ProviderFields(props: {
         </div>
         {vision && matchedPreset?.id === "deepseek" && (
           <p className="mt-2 text-[11px] leading-relaxed text-amber-400/80">
-            DeepSeek vision is experimental. Label images are sent to DeepSeek's hosted API.
+            DeepSeek Flash accepts image input. Label images are sent to DeepSeek's hosted API.
           </p>
         )}
       </div>
@@ -302,11 +303,6 @@ export function SettingsView() {
           onModel={(v) => patch({ textModel: v })}
           vision={false}
         />
-        {f.textBaseUrl.trim() === "https://api.deepseek.com" && f.visionInherit && (
-          <p className="rounded-lg border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-[11px] leading-relaxed text-amber-300/90">
-            DeepSeek's text model cannot read images. Enable a separate label-scanning provider and select DeepSeek's experimental vision model or another vision provider.
-          </p>
-        )}
         <KeyRow
           hasStoredKey={data.text.has_api_key}
           typed={f.textKey}

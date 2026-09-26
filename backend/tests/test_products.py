@@ -320,6 +320,38 @@ async def test_vision_is_stateless_candidate_and_only_echoes_scanner_barcode(mon
 
 
 @pytest.mark.asyncio
+async def test_sample_per_serving_label_becomes_reviewable_candidate(monkeypatch):
+    class SampleLabelLLM:
+        model = "test-vision-model"
+
+        async def extract_json(self, **_kwargs):
+            # Facts transcribed from the supplied photo, not an OCR assertion.
+            return NutritionLabelExtraction(
+                product_name=None,
+                basis="per_serving",
+                serving_size_g=25,
+                calories=141,
+                protein_g=1.6,
+                carbs_g=12,
+                fat_g=9.7,
+                fiber_g=0.6,
+                confidence_score=0.6,
+            )
+
+    monkeypatch.setattr(vision, "get_llm", lambda _task: SampleLabelLLM())
+
+    result = await vision.parse_label(VisionParseRequest(image_base64="abc"), None, profile())
+
+    assert result.name == "Unidentified product"
+    assert result.per100 == Per100Values(
+        calories=564, protein_g=6.4, carbs_g=48, fat_g=38.8, fiber_g=2.4
+    )
+    assert result.suggested_quantity_g == 25
+    assert result.issues == ["missing_name"]
+    assert result.acceptance_proof
+
+
+@pytest.mark.asyncio
 async def test_bind_barcode_preserves_label_candidate_and_reissues_proof(monkeypatch):
     monkeypatch.setattr(vision, "get_llm", lambda _task: FakeLLM())
     user = profile()

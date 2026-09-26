@@ -1,6 +1,6 @@
 # AGENTS.md — PlateOS Context for Agents
 
-**Last updated:** 2026-09-12 (Europe/Lisbon)
+**Last updated:** 2026-09-26 (Europe/Lisbon)
 **Maintainer rule:** any agent (or human) that changes the architecture, stack, schema, conventions, or completes a roadmap phase MUST (a) update this file in the same change and (b) record the reasoning in a new dated file under `docs/decisions/`. Never rewrite decision history — supersede it.
 
 ---
@@ -161,7 +161,7 @@ Conventions: DTOs live under `app/schemas`; the current account profile is resol
 ## 6. LLM integration rules
 
 - Two tasks route independently (`get_llm("text")` / `get_llm("vision")`): resolution is Settings-screen override → inheritance (vision from text) → env default (`PLATEOS_LLM_BASE_URL/_API_KEY/_MODEL`). Never import provider-specific SDKs beyond the OpenAI one.
-- Settings presets include OpenAI, Gemini, Ollama, and DeepSeek. DeepSeek text uses `deepseek-v4-flash`; official hosted vision uses the experimental `deepseek-v4-flash-vision-exp` and must be configured as a separate vision provider rather than inheriting the text model.
+- Settings presets include OpenAI, Gemini, Ollama, and DeepSeek. DeepSeek Flash now uses `deepseek-flash` for text and vision; the hosted model accepts image input, so vision may inherit the text provider. The older `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` names are compatibility aliases to the newer Flash model (D54). A separate vision provider remains available when wanted for privacy or independent model choice.
 - Official DeepSeek coach calls use high-effort reasoning with adaptive 16K/32K output budgets; vision extraction and connection probes disable thinking. Only final validated JSON is retained; custom endpoints receive no DeepSeek-specific parameters (D49/D50).
 - Runtime provider config lives in `PLATEOS_RUNTIME_SETTINGS_FILE` (JSON, outside the DB/backups). API keys are write-only over the API; Settings mutations are cookie-session-only — the bearer token cannot reach them. After a restore drill, re-enter provider config (D35).
 - New LLM tasks = new Pydantic contract in `schemas/llm_contracts.py` + call via `LLMService.extract_json()` (JSON mode → validate → one corrective retry).
@@ -189,7 +189,7 @@ cp ../.env.example .env   # adjust
 
 **Production stack:** hardened Compose requires the files documented in `docs/operations/production.md` under `PLATEOS_SECRETS_DIR`; `docker compose up --build` then serves the configured loopback origin. API runs migrations on boot. Never reuse development credentials in this flow. Production runs commit `539d17b` at schema `0007` without the optional push profile (D53); it supersedes the reasoning-enabled `5cdce9a` release.
 
-**Verification expectations:** 214 pytest tests and 58 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, official food catalogues, barcode validation, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 32 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. Production runs `539d17b` at schema `0007`; health/readiness, password auth, loopback-only origin, fiber summary, both catalogue searches, release identity, and a post-migration encrypted-backup checksum passed on 2026-09-12 (D53). A fresh pre-migration backup did not complete because the schema had already advanced unexpectedly, so this deployment is not production-restore evidence. The reasoning-enabled DeepSeek round-trip remains verified against the preceding `5cdce9a` release (D50). The `dbf9d39` mobile shell and standalone viewport passed physical iPhone testing on 2026-09-03 (D46); real push delivery, authenticated edge access, production restore, and remaining iOS camera/offline behavior remain separate.
+**Verification expectations:** 217 pytest tests and 61 Vitest tests cover math, validation, integrity, analytics, AI contracts, reviewed products, official food catalogues, barcode validation, recurrence/DST, account-owned offline replay, Web Push encryption/ownership/leases/SSRF guards, auth, readiness, provider error feedback, and recovery guards; `tsc --noEmit` is clean; OpenAPI lists 32 paths. Compose must boot db→migration→API readiness→web readiness; encrypted backup and isolated restore verification must pass before a recoverability claim. Production runs `539d17b` at schema `0007`; health/readiness, password auth, loopback-only origin, fiber summary, both catalogue searches, release identity, and a post-migration encrypted-backup checksum passed on 2026-09-12 (D53). A fresh pre-migration backup did not complete because the schema had already advanced unexpectedly, so this deployment is not production-restore evidence. On 2026-09-26, the authenticated production browser completed a DeepSeek Coach round-trip and parsed an uploaded 25 g Portuguese nutrition label into the expected review-only per-100g candidate (D54); neither proposal was saved. The `dbf9d39` mobile shell and standalone viewport passed physical iPhone testing on 2026-09-03 (D46); real push delivery, authenticated edge access, production restore, and remaining iOS camera/offline behavior remain separate.
 
 ## 8. Conventions & gotchas
 
@@ -211,7 +211,7 @@ cp ../.env.example .env   # adjust
 - **Containers:** base images use multi-platform index digests, Python production installs `requirements.lock`, frontend uses `npm ci --ignore-scripts`, and runtimes are non-root/read-only with bounded logs. Update pins and lockfiles intentionally together.
 - **Recovery:** never archive live `pgdata`. Use the opt-in encrypted `pg_dump` job and the separate restore project. The backup refuses an uninitialized/unsupported DB or invalid single-profile state and publishes ciphertext only after its checksum sidecar. Restore emptiness inspection relies on PostgreSQL's normal-object OID boundary and must be revalidated with a database major-version pin change. A synthetic local drill passes, but tooling/local evidence is not a production backup; do not say "backed up" until monitored production backups, independent retention, and an isolated application restore are verified.
 
-## 9. Roadmap status (as of 2026-09-12)
+## 9. Roadmap status (as of 2026-09-26)
 
 - [x] Phase 1 — scaffold, data layer, CRUD, auth, docker-compose
 - [x] Phase 2 — barcode + label pipelines, vision endpoint, downscaler *(live OFF lookup verified)*
@@ -240,7 +240,7 @@ cp ../.env.example .env   # adjust
 - [x] Versioned Ciqual and Swedish Food Agency generic-food search with proof-bound provenance (D52, 2026-09-12)
 - [x] Production deployment of fiber targets and official-food search: commit `539d17b`, schema `0007`, healthy loopback runtime, and post-migration backup checksum (D53, 2026-09-12; pre-migration backup gate discrepancy retained as an open recovery risk)
 - [ ] Production recovery operations: choose destination, schedule, retention, RPO/RTO, monitoring, and execute an authorized restore drill from a production backup
-- [ ] Real LLM round-trips (point `PLATEOS_LLM_BASE_URL` at OpenAI/Gemini/DeepSeek/Ollama and exercise vision + chat)
+- [x] Live DeepSeek text and vision round-trips through the authenticated production browser, with review-only proposals and no persistence (D54, 2026-09-26)
 - [ ] iOS device testing: camera in standalone PWA, install/offline behavior, safe areas
 - [ ] Optional later: effective-dated target history, food search-as-you-type in Quick Log
 

@@ -5,7 +5,7 @@
  * failed state and do not block later rows (poison-pill protection).
  */
 import Dexie, { type Table } from "dexie";
-import { ApiError } from "../api";
+import { api, ApiError } from "../api";
 import type { MealLogCreate } from "../types";
 
 export type PendingMealLogStatus = "pending" | "failed";
@@ -129,6 +129,15 @@ export async function enqueueMealLog(
     status: "pending",
   });
   notifyQueueChanged();
+}
+
+export async function postConfirmedMealLog(accountId: string, payload: MealLogCreate): Promise<void> {
+  requireAccountId(accountId);
+  await api("/api/meal-logs", {
+    method: "POST",
+    headers: { [EXPECTED_OWNER_HEADER]: accountId },
+    body: JSON.stringify(payload),
+  });
 }
 
 export function shouldQueueMealLogError(error: unknown): boolean {

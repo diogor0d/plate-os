@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import {
   ArrowUp,
   BarChart3,
@@ -115,9 +115,11 @@ function ThinkingIndicator({ label }: { label: string }) {
 export function Assistant({
   launch,
   onOpenAnalytics,
+  mobileScrollRef,
 }: {
   launch: AssistantLaunch | null;
   onOpenAnalytics: (intent: AnalyticsIntent) => void;
+  mobileScrollRef: RefObject<HTMLDivElement | null>;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -154,14 +156,25 @@ export function Assistant({
   }, [busy, mode, phase]);
 
   useEffect(() => {
+    const mobileScroll = mobileScrollRef.current;
     const trackPosition = () => {
-      const distance = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+      const distance = window.matchMedia("(min-width: 768px)").matches
+        ? document.documentElement.scrollHeight - window.scrollY - window.innerHeight
+        : mobileScroll
+          ? mobileScroll.scrollHeight - mobileScroll.scrollTop - mobileScroll.clientHeight
+          : 0;
       followThread.current = distance < 180;
     };
     trackPosition();
     window.addEventListener("scroll", trackPosition, { passive: true });
-    return () => window.removeEventListener("scroll", trackPosition);
-  }, []);
+    window.addEventListener("resize", trackPosition);
+    mobileScroll?.addEventListener("scroll", trackPosition, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", trackPosition);
+      window.removeEventListener("resize", trackPosition);
+      mobileScroll?.removeEventListener("scroll", trackPosition);
+    };
+  }, [mobileScrollRef]);
 
   useEffect(() => {
     if (!followThread.current) return;

@@ -23,6 +23,7 @@ import {
   type AnalyticsMetric,
 } from "../lib/analytics";
 import { api } from "../lib/api";
+import { dateRangeEndingOn } from "../lib/dates";
 import type { AnalyticsResponse, SourceType } from "../lib/types";
 import type { AnalyticsIntent } from "../lib/assistant";
 import { Card } from "./ui/card";
@@ -61,19 +62,17 @@ function Stat({ label, value, detail }: { label: string; value: string; detail: 
 
 export function Analytics({
   intent,
+  accountDate,
   onAskCoach,
 }: {
   intent: AnalyticsIntent | null;
+  accountDate?: string;
   onAskCoach: (view: Omit<AnalyticsIntent, "id">) => void;
 }) {
   const [days, setDays] = useState(30);
   const [customRange, setCustomRange] = useState(false);
-  const [start, setStart] = useState(() => {
-    const date = new Date();
-    date.setDate(date.getDate() - 29);
-    return isoInputDate(date);
-  });
-  const [end, setEnd] = useState(() => isoInputDate(new Date()));
+  const [start, setStart] = useState(() => dateRangeEndingOn(accountDate ?? isoInputDate(new Date()), 30).start);
+  const [end, setEnd] = useState(() => accountDate ?? isoInputDate(new Date()));
   const [sources, setSources] = useState<SourceType[]>([]);
   const [foodQuery, setFoodQuery] = useState("");
   const [metric, setMetric] = useState<AnalyticsMetric>("calories");
@@ -151,7 +150,14 @@ export function Analytics({
               ))}
               <button
                 type="button"
-                onClick={() => setCustomRange(true)}
+                onClick={() => {
+                  if (!customRange) {
+                    const range = dateRangeEndingOn(accountDate ?? isoInputDate(new Date()), days);
+                    setStart(range.start);
+                    setEnd(range.end);
+                  }
+                  setCustomRange(true);
+                }}
                 className={`rounded-lg border px-3 py-1.5 text-xs ${customRange ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
               >
                 Custom

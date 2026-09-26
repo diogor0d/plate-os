@@ -26,6 +26,19 @@ import {
   type StableMutation,
 } from "../lib/products";
 
+function cameraErrorMessage(error: unknown): string {
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    return "Camera access needs a secure connection and a supported browser. You can choose an existing label image instead.";
+  }
+  if (error instanceof DOMException && error.name === "NotAllowedError") {
+    return "Camera access was denied. Allow camera permission in your browser settings and try again.";
+  }
+  if (error instanceof DOMException && error.name === "NotFoundError") {
+    return "No camera was found on this device. You can choose an existing label image instead.";
+  }
+  return `Camera unavailable: ${error instanceof Error ? error.message : String(error)}`;
+}
+
 export function ScanSheet({ onClose }: { onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -50,6 +63,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const mountedRef = useRef(false);
   const startingScanRef = useRef(false);
   const scanAttemptRef = useRef(0);
+  const parseAttemptRef = useRef(0);
   candidateRef.current = candidate;
   draftRef.current = draft;
 
@@ -58,6 +72,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     return () => {
       mountedRef.current = false;
       scanAttemptRef.current += 1;
+      parseAttemptRef.current += 1;
       stopScanRef.current?.();
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
@@ -77,6 +92,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
 
   const startScan = async (purpose: "lookup" | "attach" = "lookup") => {
     if (startingScanRef.current || bindingBarcode || saving) return;
+    parseAttemptRef.current += 1;
     startingScanRef.current = true;
     setScanStarting(true);
     const scanAttempt = ++scanAttemptRef.current;
@@ -131,7 +147,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       if (mountedRef.current && scanAttemptRef.current === scanAttempt) {
         setScanning(false);
         setScanPurpose(null);
-        setStatus(`Camera unavailable: ${err instanceof Error ? err.message : String(err)}`);
+        setStatus(cameraErrorMessage(err));
       }
     } finally {
       if (scanAttemptRef.current === scanAttempt) {
@@ -197,16 +213,19 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
 
   const parseLabel = async (file: File | undefined, compare: boolean) => {
     if (!file) return;
+    const parseAttempt = ++parseAttemptRef.current;
     setError(null);
     setStatus(compare ? "Comparing label..." : "Parsing label...");
     try {
       const dataUrl = await downscaleImage(file);
+      if (!mountedRef.current || parseAttemptRef.current !== parseAttempt) return;
       const barcode = draft?.barcode.trim();
       const query = barcode ? `?barcode=${encodeURIComponent(barcode)}` : "";
       const result = await api<ProductCandidate>(
         `/api/vision/parse-label${query}`,
         { method: "POST", body: JSON.stringify({ image_base64: dataUrl }) },
       );
+      if (!mountedRef.current || parseAttemptRef.current !== parseAttempt) return;
       if (compare && candidate) {
         setComparison(result);
       } else {
@@ -219,6 +238,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       }
       setStatus(null);
     } catch (err) {
+      if (!mountedRef.current || parseAttemptRef.current !== parseAttempt) return;
       setStatus(null);
       const detail = (err instanceof Error ? err.message : String(err)).trim();
       setError(
@@ -241,7 +261,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     if (bindingBarcode || scanning || startingScanRef.current) return;
     const value = reviewValue();
     if (!value) return;
+    parseAttemptRef.current += 1;
     setError(null);
+    setStatus(null);
     const sourceType = productSourceToMealSource(value.nutrition_source);
     setProposal([{
       name: value.brand ? `${value.name} (${value.brand})`.slice(0, 255) : value.name,
@@ -259,6 +281,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     if (bindingBarcode || scanning || startingScanRef.current) return;
     const value = reviewValue();
     if (!value) return;
+    parseAttemptRef.current += 1;
+    setStatus(null);
     const fingerprint = productFingerprint({ operation: "create", value });
     saveMutation.current = stableMutation(saveMutation.current, fingerprint);
     setSaving(true);
@@ -286,6 +310,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
 
   const useComparison = () => {
     if (!comparison || !draft) return;
+    parseAttemptRef.current += 1;
     const comparedDraft = draftFromCandidate(comparison);
     setDraft({
       ...comparedDraft,
@@ -302,6 +327,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       <ProductLibrary
         onClose={() => setShowLibrary(false)}
         onReviewCandidate={(selected) => {
+          parseAttemptRef.current += 1;
           setCandidate(selected);
           setDraft(draftFromCandidate(selected));
           setComparison(null);
@@ -319,10 +345,10 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">Scan</h2>
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onClick={() => { stopScan(); setShowLibrary(true); }}>
+          <Button variant="ghost" size="sm" onClick={() => { parseAttemptRef.current += 1; setStatus(null); stopScan(); setShowLibrary(true); }}>
             <Library className="h-3.5 w-3.5" /> Library
           </Button>
-          <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
+          <Button variant="ghost" size="sm" onClick={() => { parseAttemptRef.current += 1; onClose(); }}>Close</Button>
         </div>
       </div>
 
@@ -338,14 +364,14 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           <Camera className="h-4 w-4" />
           {scanning ? "Stop" : "Scan barcode"}
         </Button>
-        <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 text-sm font-medium active:scale-[0.98]">
+        <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 text-sm font-medium active:scale-[0.98] focus-within:ring-2 focus-within:ring-emerald-500/60">
           <ScanLine className="h-4 w-4" />
-          Label photo
+          Take label photo
           <input
             type="file"
             accept="image/*"
             capture="environment"
-            className="hidden"
+            className="sr-only"
             disabled={saving || bindingBarcode}
             onChange={(e) => {
               void parseLabel(e.target.files?.[0], false);
@@ -354,6 +380,21 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           />
         </label>
       </div>
+
+      <label className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 text-sm font-medium active:scale-[0.98] focus-within:ring-2 focus-within:ring-emerald-500/60">
+        <ScanLine className="h-4 w-4" />
+        Choose existing label image
+        <input
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          disabled={saving || bindingBarcode}
+          onChange={(event) => {
+            void parseLabel(event.target.files?.[0], false);
+            event.target.value = "";
+          }}
+        />
+      </label>
 
       <p className="text-[11px] leading-relaxed text-zinc-500">
         Label photos are processed by your configured vision provider and may leave this host. Parsing is stateless and never saves a product or meal.
@@ -412,13 +453,25 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             <div className="space-y-2 rounded-lg border border-zinc-800 p-3">
               <p className="text-xs font-medium text-zinc-300">Optional label verification</p>
               <p className="text-[11px] text-zinc-500">Compare a downscaled label photo without saving either result. The image may leave this host.</p>
-              <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 text-xs font-medium hover:bg-zinc-800 active:scale-[0.98]">
-                <ScanLine className="h-3.5 w-3.5" /> Compare label
+              <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 text-xs font-medium hover:bg-zinc-800 active:scale-[0.98] focus-within:ring-2 focus-within:ring-emerald-500/60">
+                <ScanLine className="h-3.5 w-3.5" /> Take comparison photo
                 <input
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  className="hidden"
+                  className="sr-only"
+                  onChange={(event) => {
+                    void parseLabel(event.target.files?.[0], true);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+              <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 text-xs font-medium hover:bg-zinc-800 active:scale-[0.98] focus-within:ring-2 focus-within:ring-emerald-500/60">
+                <ScanLine className="h-3.5 w-3.5" /> Choose comparison image
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
                   onChange={(event) => {
                     void parseLabel(event.target.files?.[0], true);
                     event.target.value = "";

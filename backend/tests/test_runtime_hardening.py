@@ -158,9 +158,17 @@ class FakeReadinessSession:
     async def __aexit__(self, *_args: object) -> None:
         return None
 
-    async def scalar(self, _query: object) -> int | None:
+    async def execute(self, _query: object) -> "FakeReadinessResult":
         self.calls += 1
-        return self.profile_count if self.calls == 1 else None
+        return FakeReadinessResult(self.profile_count)
+
+
+class FakeReadinessResult:
+    def __init__(self, profile_count: int) -> None:
+        self.profile_count = profile_count
+
+    def one(self) -> tuple[int]:
+        return (self.profile_count,)
 
 
 @pytest.mark.asyncio
@@ -173,7 +181,29 @@ async def test_readiness_checks_database_schema_and_single_profile(
     monkeypatch.setattr(main_module, "SessionLocal", lambda: session)
 
     assert await main_module.ready() == {"status": "ready"}
-    assert session.calls == 9
+    assert session.calls == 1
+
+
+def test_readiness_query_probes_schema_even_when_tables_are_empty() -> None:
+    from sqlalchemy.dialects import postgresql
+
+    from app.main import READINESS_QUERY
+
+    sql = str(READINESS_QUERY.compile(dialect=postgresql.dialect()))
+    for reference in (
+        "user_profile.id",
+        "user_profile.target_fiber_g",
+        "meal_logs.calories_per_100",
+        "meal_log_mutations.request_fingerprint",
+        "food_items.nutrition_source",
+        "food_items.nutrition_source_id",
+        "food_items.nutrition_source_version",
+        "food_item_mutations.request_fingerprint",
+        "meal_occurrences.user_id",
+        "push_subscriptions.endpoint_fingerprint",
+    ):
+        assert reference in sql
+    assert sql.count("SELECT") == 10  # count + 9 independent, empty-safe schema probes
 
 
 @pytest.mark.asyncio

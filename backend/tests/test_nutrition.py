@@ -37,6 +37,37 @@ class TestNormalizeExtraction:
         )
         assert per100.calories == pytest.approx(400.0)
 
+    def test_portuguese_sample_label_per_25g(self):
+        # Printed values from the supplied photo; this verifies app arithmetic,
+        # not whether a vision provider reads the image correctly.
+        extraction = make_extraction(
+            product_name=None,
+            basis="per_serving",
+            serving_size_g=25,
+            calories=141,
+            protein_g=1.6,
+            carbs_g=12,
+            fat_g=9.7,
+            fiber_g=0.6,
+        )
+
+        per100 = normalize_extraction(extraction)
+        assert per100 == Per100Values(
+            calories=564,
+            protein_g=6.4,
+            carbs_g=48,
+            fat_g=38.8,
+            fiber_g=2.4,
+        )
+        assert suggested_quantity_g(extraction) == 25
+        assert scale_to_quantity(per100, 25) == {
+            "calories": 141.0,
+            "protein_g": 1.6,
+            "carbs_g": 12.0,
+            "fat_g": 9.7,
+            "fiber_g": 0.6,
+        }
+
     def test_per_serving_without_serving_size_raises(self):
         with pytest.raises(ValueError):
             normalize_extraction(make_extraction(basis="per_serving", serving_size_g=None))

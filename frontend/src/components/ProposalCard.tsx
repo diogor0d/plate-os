@@ -14,6 +14,7 @@ import type { MealLogCreate, MeInfo, Per100, SourceType } from "../lib/types";
 import {
   enqueueMealLog,
   flushOccurrenceCompletionAttempts,
+  postConfirmedMealLog,
   recordOccurrenceCompletionAttempt,
   shouldQueueMealLogError,
 } from "../lib/offline/db";
@@ -118,7 +119,7 @@ export function ProposalCard({
         if (nextCompleted.has(idx)) continue;
         if (navigator.onLine) {
           try {
-            await api("/api/meal-logs", { method: "POST", body: JSON.stringify(payload) });
+            await postConfirmedMealLog(me.data.id, payload);
           } catch (err) {
             if (!shouldQueueMealLogError(err)) throw err;
             await enqueueMealLog(me.data.id, payload);

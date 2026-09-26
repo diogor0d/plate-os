@@ -1,6 +1,7 @@
 import type { MealLog } from "../lib/types";
+import { formatMealTime } from "../lib/dates";
 
-export function MealList({ logs, onDelete }: { logs: MealLog[] | undefined; onDelete?: (id: string) => void }) {
+export function MealList({ logs, onDelete, deletingId, timeZone }: { logs: MealLog[] | undefined; onDelete?: (id: string) => void; deletingId?: string | null; timeZone?: string }) {
   if (!logs) return null;
   if (logs.length === 0)
     return <p className="py-6 text-center text-sm text-zinc-500">Nothing logged yet today.</p>;
@@ -11,7 +12,7 @@ export function MealList({ logs, onDelete }: { logs: MealLog[] | undefined; onDe
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{log.custom_name ?? "Food item"}</p>
             <p className="text-xs text-zinc-500">
-              {new Date(log.logged_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ·{" "}
+              {formatMealTime(log.logged_at, timeZone)} ·{" "}
               {Math.round(log.quantity_g)}g · {log.source_type.replaceAll("_", " ")}
             </p>
           </div>
@@ -23,10 +24,11 @@ export function MealList({ logs, onDelete }: { logs: MealLog[] | undefined; onDe
             {onDelete && (
               <button
                 onClick={() => onDelete(log.id)}
+                disabled={deletingId !== null && deletingId !== undefined}
                 className="text-xs text-zinc-600 hover:text-red-400"
                 aria-label={`Delete ${log.custom_name ?? "entry"}`}
               >
-                ✕
+                {deletingId === log.id ? "…" : "✕"}
               </button>
             )}
           </div>

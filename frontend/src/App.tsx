@@ -35,7 +35,6 @@ const SettingsView = lazy(() => import("./components/Settings").then((m) => ({ d
 const Routines = lazy(() => import("./components/Routines"));
 
 function LoginGate() {
-  const qc = useQueryClient();
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +46,7 @@ function LoginGate() {
         method: "POST",
         body: JSON.stringify({ username: username.trim(), password }),
       });
-      qc.clear();
+      window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -111,6 +110,8 @@ export default function App() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>(() => window.location.pathname === "/plan" ? "plan" : "today");
   const [showManual, setShowManual] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
   const [online, setOnline] = useState(navigator.onLine);
   const [queuedCount, setQueuedCount] = useState(0);
   const [failedQueue, setFailedQueue] = useState<PendingMealLog[]>([]);
@@ -209,8 +210,16 @@ export default function App() {
   }, [me.data?.id, qc]);
 
   const deleteLog = async (id: string) => {
-    await api(`/api/meal-logs/${id}`, { method: "DELETE" });
-    await qc.invalidateQueries();
+    setDeletingLogId(id);
+    setDeleteError(null);
+    try {
+      await api(`/api/meal-logs/${id}`, { method: "DELETE" });
+      await qc.invalidateQueries();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Could not delete this meal. Try again.");
+    } finally {
+      setDeletingLogId(null);
+    }
   };
 
   const launchAssistant = (
@@ -371,7 +380,8 @@ export default function App() {
                     />
                   </Card>
                 )}
-                <MealList logs={logs.data} onDelete={(id) => void deleteLog(id)} />
+                {deleteError && <p role="alert" className="text-xs text-red-400">{deleteError}</p>}
+                <MealList logs={logs.data} timeZone={summary.data?.timezone} deletingId={deletingLogId} onDelete={(id) => void deleteLog(id)} />
               </div>
               <Card className="hidden space-y-3 lg:sticky lg:top-[105px] lg:block">
                 <h3 className={TEXT_EYEBROW}>Budget</h3>
@@ -407,12 +417,13 @@ export default function App() {
             </Suspense>
           )}
           <div className={tab === "coach" ? "block" : "hidden"}>
-            <Assistant launch={assistantLaunch} onOpenAnalytics={openAnalytics} />
+            <Assistant launch={assistantLaunch} onOpenAnalytics={openAnalytics} mobileScrollRef={mobileScrollRef} />
           </div>
           {tab === "stats" && (
             <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-zinc-900" />}>
               <Analytics
                 intent={analyticsIntent}
+                accountDate={summary.data?.date}
                 onAskCoach={(view) => launchAssistant(
                   "Analyze the current statistics view. Explain the most useful pattern, any data-quality limitation, and suggest one next action.",
                   "analytics",
